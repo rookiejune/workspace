@@ -49,7 +49,8 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 LongCat decoder 还原 source/target 波形供试听。
 
 如果 `STATIC_HOME` 未设置，入口会使用 `LOCATION` 对应默认值并发 warning；
-`LOCATION` 缺失时默认是 `fudan`。调用入口时会根据 `STATIC_HOME` 或该默认值补齐缺失的 `ANYDATASET_HOME`、
+`LOCATION` 缺失时会按 `/share5_video`、`/nfs/yin.zhu`、`/mnt` 的顺序探测默认位置。
+调用入口时会根据 `STATIC_HOME` 或该默认值补齐缺失的 `ANYDATASET_HOME`、
 `ANYTRAIN_HOME`、`BPE_CACHE_DIR`、`HF_HOME`、`HF_HUB_CACHE`、`HF_DATASETS_CACHE`、
 `TORCH_HOME` 和 `ANYTRAIN_WHISPER_ROOT`。
 临时使用其他物理根目录时，传 `dataset_dir=...`；需要强制选择物理加载方案时，

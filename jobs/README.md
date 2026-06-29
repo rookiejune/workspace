@@ -13,9 +13,10 @@ Common variables:
 | `REPOS_ROOT` | Parent directory containing `workspace/`, `third_party/`, and experiment repos. |
 | `PYTHONPATH` | Adds `workspace/src` and required `third_party` packages when unset. |
 
-Machine presets such as `LOCATION=fudan` and `LOCATION=hz` are resolved by
-`zhuyin.env` inside Python. Explicit `STATIC_HOME` or `DYNAMIC_HOME` still
-override those defaults.
+Machine presets such as `LOCATION=us`, `LOCATION=hz` and `LOCATION=fudan` are
+resolved by `zhuyin.env` inside Python. If `LOCATION` is unset, Python detects
+the first available marker in this order: `/share5_video`, `/nfs/yin.zhu`,
+`/mnt`. Explicit `STATIC_HOME` or `DYNAMIC_HOME` still override those defaults.
 
 Common wrappers:
 

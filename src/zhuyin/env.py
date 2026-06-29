@@ -28,6 +28,10 @@ WHISPER_ROOT_ENV = "ANYTRAIN_WHISPER_ROOT"
 
 FUDAN_HOME = Path("/mnt/pami202/zhuyin")
 HZ_HOME = Path("/nfs/yin.zhu")
+US_HOME = Path("/share5_video/zhuyin")
+US_MARKER = Path("/share5_video")
+HZ_MARKER = HZ_HOME
+FUDAN_MARKER = Path("/mnt")
 
 
 class Location(StrEnum):
@@ -35,6 +39,7 @@ class Location(StrEnum):
 
     FUDAN = auto()
     HZ = auto()
+    US = auto()
 
     @property
     def default_static_home(self) -> Path:
@@ -42,6 +47,8 @@ class Location(StrEnum):
             return FUDAN_HOME
         if self is Location.HZ:
             return HZ_HOME
+        if self is Location.US:
+            return US_HOME
         raise ValueError(f"unsupported {LOCATION_ENV}: {self.value}")
 
     @property
@@ -50,6 +57,8 @@ class Location(StrEnum):
             return self.default_static_home / "dynamic"
         if self is Location.HZ:
             return Path("/yin.zhu")
+        if self is Location.US:
+            return self.default_static_home / "dynamic"
         raise ValueError(f"unsupported {LOCATION_ENV}: {self.value}")
 
     def default_home(self, name: str) -> Path:
@@ -70,8 +79,9 @@ def location() -> Location:
 
     value = os.environ.get(LOCATION_ENV)
     if value is None:
-        os.environ[LOCATION_ENV] = DEFAULT_LOCATION.value
-        return DEFAULT_LOCATION
+        detected = _detect_location()
+        os.environ[LOCATION_ENV] = detected.value
+        return detected
     if not value:
         raise ValueError(f"{LOCATION_ENV} must not be empty.")
     try:
@@ -79,6 +89,16 @@ def location() -> Location:
     except ValueError as e:
         choices = ", ".join(item.value for item in Location)
         raise ValueError(f"{LOCATION_ENV} must be one of: {choices}.") from e
+
+
+def _detect_location() -> Location:
+    if US_MARKER.exists():
+        return Location.US
+    if HZ_MARKER.exists():
+        return Location.HZ
+    if FUDAN_MARKER.exists():
+        return Location.FUDAN
+    return DEFAULT_LOCATION
 
 
 def dynamic_home() -> Path:

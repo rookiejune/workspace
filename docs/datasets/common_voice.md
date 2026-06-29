@@ -12,14 +12,13 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 
 1. `common_voice(root=...)`
 2. `$STATIC_HOME/datasets/common_voice`
-3. `/mnt/pami202/zhuyin/datasets/common_voice`，同时发 warning
+3. `LOCATION` 自动探测出的默认 `$STATIC_HOME/datasets/common_voice`，同时发 warning
 
 如果 `root` 指向 `cv-corpus-*` 下面的具体语种目录，语种由目录名推断；否则交给
 anydataset 的 Common Voice preset 从根目录结构推断最新语料版本和默认语种。
 
-调用入口时会根据 `STATIC_HOME` 补齐缺失的 `ANYDATASET_HOME=$STATIC_HOME/anydataset`
-和 `HF_HOME=$STATIC_HOME/huggingface`。如果显式设置过 `ANYDATASET_HOME` 或 `HF_HOME`，
-则保留显式值。
+调用入口时会根据 `STATIC_HOME` 补齐缺失的派生缓存变量。如果显式设置过派生缓存
+变量，则保留显式值。
 
 ## Workspace API
 

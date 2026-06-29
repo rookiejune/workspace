@@ -9,8 +9,44 @@ import pytest
 from zhuyin import env
 
 
-def test_location_defaults_to_fudan(monkeypatch: pytest.MonkeyPatch) -> None:
+def _mock_existing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    paths: set[str],
+) -> None:
+    monkeypatch.setattr(Path, "exists", lambda path: str(path) in paths)
+
+
+def test_location_defaults_to_fudan_when_only_mnt_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, {"/mnt"})
+
+    assert env.location() is env.Location.FUDAN
+    assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
+
+
+def test_location_defaults_to_hz_when_nfs_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu"})
+
+    assert env.location() is env.Location.HZ
+    assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
+
+
+def test_location_defaults_to_us_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu", "/share5_video"})
+
+    assert env.location() is env.Location.US
+    assert os.environ[env.LOCATION_ENV] == env.Location.US.value
+
+
+def test_location_uses_fudan_fallback_without_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, set())
 
     assert env.location() is env.Location.FUDAN
     assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
@@ -20,6 +56,12 @@ def test_location_accepts_hz(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
 
     assert env.location() is env.Location.HZ
+
+
+def test_location_accepts_us(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.US.value)
+
+    assert env.location() is env.Location.US
 
 
 def test_location_rejects_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,6 +110,20 @@ def test_homes_default_to_location_roots(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert os.environ[env.STATIC_HOME_ENV] == "/nfs/yin.zhu"
     assert os.environ[env.DYNAMIC_HOME_ENV] == "/yin.zhu"
+
+
+def test_homes_default_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.US.value)
+    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
+
+    with pytest.warns(RuntimeWarning, match=env.Location.US.value):
+        assert env.static_home() == env.US_HOME
+    with pytest.warns(RuntimeWarning, match=env.Location.US.value):
+        assert env.dynamic_home() == env.US_HOME / "dynamic"
+
+    assert os.environ[env.STATIC_HOME_ENV] == "/share5_video/zhuyin"
+    assert os.environ[env.DYNAMIC_HOME_ENV] == "/share5_video/zhuyin/dynamic"
 
 
 def test_explicit_homes_override_location(monkeypatch: pytest.MonkeyPatch) -> None:
