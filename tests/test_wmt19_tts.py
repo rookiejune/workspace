@@ -24,7 +24,7 @@ def test_wmt19_tts_uses_explicit_dataset_dir(
     dataset = module.wmt19_tts(dataset_dir="/data/wmt19", split="dev")
 
     assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/wmt19/full-store"
+    assert dataset.spec.path == "/data/wmt19/longcat-delta"
     assert dataset.spec.split == "dev"
 
 
@@ -34,7 +34,7 @@ def test_wmt19_tts_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
     dataset = module.wmt19_tts()
 
-    assert dataset.spec.path == "/data/static/datasets/wmt19-zh-en-tts-longcat-1000/full-store"
+    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/longcat-delta"
 
 
 def test_wmt19_tts_rejects_empty_static_home(

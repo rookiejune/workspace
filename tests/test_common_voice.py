@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from anydataset import AudioMeta, Modality, Role
 
-from zhuyin.datasets.common_voice import Args, common_voice, dataset_root
+from zhuyin.datasets.common_voice import common_voice, dataset_root
 
 
 def test_common_voice_builds_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,7 +20,7 @@ def test_common_voice_builds_split(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
 
-    dataset = common_voice(Args(root=tmp_path))
+    dataset = common_voice(root=tmp_path)
 
     assert dataset.spec.path == str(corpus)
     assert dataset.spec.split == "train"
@@ -38,7 +38,7 @@ def test_common_voice_accepts_args(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
 
-    dataset = common_voice(Args(root=tmp_path, split="dev"))
+    dataset = common_voice(root=tmp_path, split="dev")
 
     assert dataset.spec.path == str(corpus)
     assert dataset.spec.split == "dev"
@@ -48,6 +48,26 @@ def test_dataset_root_prefers_explicit_root(tmp_path: Path, monkeypatch: pytest.
     monkeypatch.setenv("STATIC_HOME", "/env/static")
 
     assert dataset_root(tmp_path) == tmp_path
+
+
+def test_common_voice_infers_language_from_language_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus = tmp_path / "cv-corpus-24.0-2025-12-05" / "zh-CN"
+    (corpus / "clips").mkdir(parents=True)
+    (corpus / "train.tsv").write_text(
+        "client_id\tpath\tsentence_id\tsentence\tsentence_domain\t"
+        "up_votes\tdown_votes\tage\tgender\taccents\tvariant\tlocale\tsegment\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
+
+    dataset = common_voice(root=corpus)
+
+    assert dataset.spec.path == str(corpus)
+    assert dataset.spec.version == "24.0-2025-12-05"
 
 
 def test_dataset_root_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +100,7 @@ def test_common_voice_sample_contains_speaker_label(
 
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
 
-    sample = next(iter(common_voice(Args(root=tmp_path))))
+    sample = next(iter(common_voice(root=tmp_path)))
     audio = sample[(Role.DEFAULT, Modality.AUDIO)]
 
     assert audio.meta[AudioMeta.SPEAKER_ID] == "speaker-1"
@@ -103,7 +123,7 @@ def test_common_voice_configures_derived_environment(
     monkeypatch.delenv("ANYDATASET_HOME", raising=False)
     monkeypatch.delenv("HF_HOME", raising=False)
 
-    common_voice(Args(root=tmp_path))
+    common_voice(root=tmp_path)
 
     assert os.environ["ANYDATASET_HOME"] == str(static_home / "anydataset")
     assert os.environ["HF_HOME"] == str(static_home / "huggingface")

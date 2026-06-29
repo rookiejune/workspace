@@ -6,7 +6,7 @@
 默认训练入口：
 
 ```text
-store://$STATIC_HOME/datasets/wmt19-zh-en-tts-longcat-1000/full-store:train
+store://$STATIC_HOME/datasets/wmt19_tts/longcat-delta:train
 ```
 
 对应 workspace 入口：
@@ -27,8 +27,9 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 两侧 audio 的 `AudioView.LONGCAT` keys、`semantic_codes` / `acoustic_codes` shape，并用
 LongCat decoder 还原 source/target 波形供试听。
 
-默认数据集根目录是 `$STATIC_HOME/datasets/wmt19-zh-en-tts-longcat-1000`，下面包含
-`full-store`。调用入口时会根据 `STATIC_HOME` 补齐缺失的 `ANYDATASET_HOME` 和 `HF_HOME`。
+默认数据集根目录是 `$STATIC_HOME/datasets/wmt19_tts`，默认 store 子目录是
+`longcat-delta`。调用入口时会根据 `STATIC_HOME` 补齐缺失的 `ANYDATASET_HOME` 和
+`HF_HOME`。
 临时使用其他数据集根目录时，直接传 `dataset_dir=...`。
 
 数据契约和 speech-to-speech 保持一致：source 和 target 两侧 audio 都包含

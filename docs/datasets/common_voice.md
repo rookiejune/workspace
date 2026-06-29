@@ -5,14 +5,16 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 
 ## Default
 
-- 默认语种：`en`
 - 默认 split：`train`
 - 默认根目录：`$STATIC_HOME/datasets/common_voice`
 
 入口按这个顺序解析根目录：
 
-1. `Args(root=...)`
+1. `common_voice(root=...)`
 2. `$STATIC_HOME/datasets/common_voice`
+
+如果 `root` 指向 `cv-corpus-*` 下面的具体语种目录，语种由目录名推断；否则交给
+anydataset 的 Common Voice preset 从根目录结构推断最新语料版本和默认语种。
 
 调用入口时会根据 `STATIC_HOME` 补齐缺失的 `ANYDATASET_HOME=$STATIC_HOME/anydataset`
 和 `HF_HOME=$STATIC_HOME/huggingface`。如果显式设置过 `ANYDATASET_HOME` 或 `HF_HOME`，
@@ -22,9 +24,9 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 
 ```python
 from anydataset import AudioMeta, Modality, Role
-from zhuyin.datasets.common_voice import Args, common_voice
+from zhuyin.datasets.common_voice import common_voice
 
-dataset = common_voice(Args(split="train"))
+dataset = common_voice(split="train")
 sample = next(iter(dataset))
 audio = sample[(Role.DEFAULT, Modality.AUDIO)]
 speaker = audio.meta[AudioMeta.SPEAKER_ID]

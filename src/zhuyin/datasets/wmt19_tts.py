@@ -2,7 +2,7 @@
 
 This module exposes the prepared WMT19 zh-en TTS/LongCat store as an
 `anydataset.AnyDataset`. The default root is resolved from
-`STATIC_HOME/datasets/wmt19-zh-en-tts-longcat-1000`. Callers may still pass one
+`STATIC_HOME/datasets/wmt19_tts`. Callers may still pass one
 explicit dataset directory for a one-off override.
 """
 
@@ -15,8 +15,8 @@ from anydataset import AnyDataset, Source, Spec
 
 from zhuyin.env import configure_environment, dataset_dir
 
-DATASET_NAME = "wmt19-zh-en-tts-longcat-1000"
-_STORE_DIR = "full-store"
+WMT19_TTS = "wmt19_tts"
+_STORE_DIR = "longcat-delta"
 
 
 def wmt19_tts(
@@ -34,6 +34,14 @@ def wmt19_tts(
     configure_environment()
     root = _dataset_root(dataset_dir)
     return AnyDataset(_dataset_spec(dataset_dir=root, split=split))
+
+
+def wmt19_tts_longcat(
+    *,
+    dataset_dir: str | PathLike[str] | None = None,
+    split: str = "train",
+) -> AnyDataset:
+    return ...
 
 
 def _dataset_spec(
@@ -62,4 +70,4 @@ def _dataset_root(value: str | PathLike[str] | None = None) -> Path:
     if value is not None:
         return Path(value).expanduser()
 
-    return dataset_dir(DATASET_NAME)
+    return dataset_dir(WMT19_TTS)
