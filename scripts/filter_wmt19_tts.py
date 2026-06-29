@@ -82,7 +82,7 @@ class StoreFactory:
 @dataclass(frozen=True)
 class SpeechQualityFactory:
     whisper_model: str
-    quality_device: str
+    quality_device: str | None
     whisper_root: Path
     min_utmos: float
     max_wer: float
@@ -106,15 +106,16 @@ class SpeechQualityFactory:
         )
 
     def __call__(self) -> SpeechQuality:
+        device = quality_device(self.quality_device)
         evaluator = SpeechEvaluator(
             asr=WhisperASREvaluator(
                 model_name=self.whisper_model,
-                device=self.quality_device,
+                device=device,
                 download_root=self.whisper_root,
                 decode_options={"temperature": 0.0},
             ),
             utmos=UTMOSEvaluator(
-                device=self.quality_device,
+                device=device,
                 backend_load_options={"trust_repo": True},
             ),
         )
@@ -136,6 +137,18 @@ def write_metrics_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def quality_device(override: str | None) -> str:
+    if override is not None:
+        return override
+    device = os.environ.get("ANYDATASET_FILTER_DEVICE")
+    if device is None:
+        raise RuntimeError(
+            "quality device is unset; pass --quality-device or run the filter through "
+            "anydataset so ANYDATASET_FILTER_DEVICE is populated."
+        )
+    return device
 
 
 def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
@@ -191,7 +204,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path)
     parser.add_argument("--split", default="train")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
-    parser.add_argument("--quality-device", default="cuda:0")
+    parser.add_argument("--quality-device")
     parser.add_argument("--whisper-model", default="large-v3-turbo")
     parser.add_argument("--min-utmos", type=float, default=2.8)
     parser.add_argument("--max-wer", type=float, default=None)

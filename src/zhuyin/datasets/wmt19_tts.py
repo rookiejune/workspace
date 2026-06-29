@@ -105,9 +105,7 @@ def _store_dataset(
     split: str = "train",
 ) -> AnyDataset:
     root = _dataset_root(dataset_dir)
-    return AnyDataset(
-        _dataset_spec(store_dir=store_dir, dataset_dir=root, split=split)
-    )
+    return AnyDataset(_dataset_spec(store_dir=store_dir, dataset_dir=root, split=split))
 
 
 def _dataset_spec(
@@ -159,7 +157,7 @@ def _parse_hz_tts_row(row: dict[str, str]) -> dict[tuple[Role, Modality], Any]:
             (Role.SOURCE, Modality.AUDIO): AudioItem(
                 views={
                     AudioView.WAVEFORM: _load_audio(
-                        row["source/audio"].replace("rank", "shard")
+                        row["source/audio"].replace("rank", "train/shard")
                     ),
                 },
             ),
@@ -170,7 +168,7 @@ def _parse_hz_tts_row(row: dict[str, str]) -> dict[tuple[Role, Modality], Any]:
             (Role.TARGET, Modality.AUDIO): AudioItem(
                 views={
                     AudioView.WAVEFORM: _load_audio(
-                        row["target/audio"].replace("rank", "shard")
+                        row["target/audio"].replace("rank", "train/shard")
                     ),
                 },
             ),
