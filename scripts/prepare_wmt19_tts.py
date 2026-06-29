@@ -42,6 +42,7 @@ from zhuyin.env import dataset_dir, hf_home
 
 WMT19_TTS = "wmt19_tts"
 TTS_STORE_DIR = "base"
+DEFAULT_TTS_REFERENCE_SECONDS = 8.0
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
     work = args.root / "work" / "base"
     text_store = work / "text"
     source_audio_store = work / "source-audio"
-    target_audio_store = work / "target-audio"
+    target_audio_store = work / target_audio_store_name(args.tts_reference_seconds)
 
     if not is_ready_store(text_store):
         DatasetWriter(
@@ -119,6 +120,7 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
                 source_audio_store,
                 args.split,
                 Role.TARGET,
+                args.tts_reference_seconds,
             ),
             provider_factory=MossTTSFactory(args, reference_role=Role.SOURCE),
             devices=args.devices,
@@ -159,24 +161,30 @@ class RoleTextMergedStoreFactory:
     audio: Path
     split: str
     role: Role
+    reference_seconds: float | None
 
     def __call__(self) -> RoleTextDataset:
         dataset = store_dataset(self.text, self.split).merge(
             store_dataset(self.audio, self.split)
         )
-        return RoleTextDataset(dataset, self.role)
+        return RoleTextDataset(dataset, self.role, self.reference_seconds)
 
 
 @dataclass(frozen=True)
 class RoleTextDataset:
     dataset: MapStyleABC
     role: Role
+    reference_seconds: float | None = None
 
     def __len__(self) -> int:
         return len(self.dataset)
 
     def __getitem__(self, index: int) -> Sample:
-        return role_text_sample(self.dataset[index], self.role)
+        return role_text_sample(
+            self.dataset[index],
+            self.role,
+            reference_seconds=self.reference_seconds,
+        )
 
     def __iter__(self) -> Iterable[Sample]:
         for index in range(len(self)):
@@ -220,18 +228,52 @@ def limited_wmt19_samples(
     yield from islice(dataset, limit)
 
 
-def role_text_dataset(dataset: Iterable[Sample], role: Role) -> Iterable[Sample]:
+def role_text_dataset(
+    dataset: Iterable[Sample],
+    role: Role,
+    *,
+    reference_seconds: float | None = None,
+) -> Iterable[Sample]:
     for sample in dataset:
-        yield role_text_sample(sample, role)
+        yield role_text_sample(sample, role, reference_seconds=reference_seconds)
 
 
-def role_text_sample(sample: Sample, role: Role) -> Sample:
+def role_text_sample(
+    sample: Sample,
+    role: Role,
+    *,
+    reference_seconds: float | None = None,
+) -> Sample:
     output: dict[tuple[Role, Modality], Any] = {
         (role, Modality.TEXT): sample[role, Modality.TEXT],
     }
     if role is Role.TARGET:
-        output[Role.SOURCE, Modality.AUDIO] = sample[Role.SOURCE, Modality.AUDIO]
+        source_audio = cast(AudioItem, sample[Role.SOURCE, Modality.AUDIO])
+        output[Role.SOURCE, Modality.AUDIO] = reference_audio(
+            source_audio,
+            reference_seconds,
+        )
     return cast(Sample, output)
+
+
+def reference_audio(item: AudioItem, seconds: float | None) -> AudioItem:
+    if seconds is None:
+        return item
+    if AudioView.WAVEFORM not in item.views:
+        raise ValueError("target TTS reference trimming requires waveform audio.")
+    waveform, sample_rate = item.views[AudioView.WAVEFORM]
+    sample_count = int(round(seconds * int(sample_rate)))
+    clipped = torch.as_tensor(waveform)[..., :sample_count]
+    return AudioItem(
+        views={AudioView.WAVEFORM: (clipped, int(sample_rate))},
+        meta=item.meta,
+    )
+
+
+def target_audio_store_name(reference_seconds: float | None) -> str:
+    if reference_seconds is None:
+        return "target-audio"
+    return f"target-audio-ref{reference_seconds:g}s"
 
 
 def store_dataset(path: Path, split: str) -> AnyDataset:
@@ -329,6 +371,7 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "limit": args.limit,
         "devices": args.devices,
         "tts_batch_size": args.tts_batch_size,
+        "tts_reference_seconds": args.tts_reference_seconds,
         "moss_model": args.moss_model,
         "moss_codec_model": args.moss_codec_model,
         "first_sample": inspect_sample(args.tts_store, args.split)
@@ -358,6 +401,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--devices", default="auto")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
     parser.add_argument("--tts-batch-size", type=int, default=1)
+    parser.add_argument(
+        "--tts-reference-seconds",
+        type=float,
+        default=DEFAULT_TTS_REFERENCE_SECONDS,
+    )
     parser.add_argument("--moss-model", default="OpenMOSS-Team/MOSS-TTS-v1.5")
     parser.add_argument("--moss-codec-model", default="OpenMOSS-Team/MOSS-Audio-Tokenizer")
     parser.add_argument("--tts-sample-rate", type=int, default=None)

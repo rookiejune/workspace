@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -17,7 +16,7 @@ from anydataset.store.reader import read_store_dataset
 
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
 from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir, hf_home
+from zhuyin.env import dataset_dir
 
 LONGCAT_STORE_DIR = "longcat"
 
@@ -61,10 +60,10 @@ def write_longcat_store(args: argparse.Namespace) -> Stage:
             longcat_view_store,
             split=args.split,
             max_shard_samples=args.max_shard_samples,
-            batch_size=args.longcat_batch_size,
+            batch_size=args.batch_size,
         ).write(
             dataset_factory=TTSFactory(args.split),
-            provider_factory=LongCatFactory(args),
+            provider_factory=LongCatFactory(),
             devices=args.devices,
         )
 
@@ -95,14 +94,9 @@ class TTSFactory:
 
 @dataclass(frozen=True)
 class LongCatFactory:
-    args: argparse.Namespace
-
     def __call__(self, device: str) -> LongCatProvider:
         return LongCatProvider(
-            cache_dir=self.args.longcat_cache_dir,
-            decoders=(self.args.longcat_decoder,),
             device=device if device != "cpu" else None,
-            local_files_only=self.args.local_files_only,
         )
 
 
@@ -140,13 +134,6 @@ def configure_env(args: argparse.Namespace) -> None:
     args.root.mkdir(parents=True, exist_ok=True)
     args.longcat_store = args.root / LONGCAT_STORE_DIR
     args.reports_dir = args.root / "reports"
-    args.hf_home = hf_home()
-    args.longcat_cache_dir = (
-        args.hf_home / "longcat-audio-codec"
-        if args.longcat_cache_dir is None
-        else args.longcat_cache_dir
-    )
-    os.environ["HF_ENDPOINT"] = args.hf_endpoint
 
 
 def run_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -156,8 +143,7 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "longcat_store": str(args.longcat_store),
         "split": args.split,
         "devices": args.devices,
-        "longcat_batch_size": args.longcat_batch_size,
-        "longcat_decoder": args.longcat_decoder,
+        "batch_size": args.batch_size,
     }
 
 
@@ -178,11 +164,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dataset-id", default=WMT19_TTS)
     parser.add_argument("--devices", default="auto")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
-    parser.add_argument("--longcat-batch-size", type=int, default=1)
-    parser.add_argument("--longcat-cache-dir", type=Path)
-    parser.add_argument("--longcat-decoder", default="16k_4codebooks")
-    parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
-    parser.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--batch-size", type=int, default=1)
     return parser.parse_args(argv)
 
 

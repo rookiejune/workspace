@@ -28,7 +28,8 @@ WHISPER_ROOT_ENV = "ANYTRAIN_WHISPER_ROOT"
 
 FUDAN_HOME = Path("/mnt/pami202/zhuyin")
 HZ_HOME = Path("/nfs/yin.zhu")
-US_HOME = Path("/share5_video/zhuyin")
+US_STATIC_HOME = Path("/zoomai/colddata/video/yin.zhu")
+US_DYNAMIC_HOME = Path("/share5_video/users/yin.zhu")
 US_MARKER = Path("/share5_video")
 HZ_MARKER = HZ_HOME
 FUDAN_MARKER = Path("/mnt")
@@ -48,7 +49,7 @@ class Location(StrEnum):
         if self is Location.HZ:
             return HZ_HOME
         if self is Location.US:
-            return US_HOME
+            return US_STATIC_HOME
         raise ValueError(f"unsupported {LOCATION_ENV}: {self.value}")
 
     @property
@@ -58,7 +59,7 @@ class Location(StrEnum):
         if self is Location.HZ:
             return Path("/yin.zhu")
         if self is Location.US:
-            return self.default_static_home / "dynamic"
+            return US_DYNAMIC_HOME
         raise ValueError(f"unsupported {LOCATION_ENV}: {self.value}")
 
     def default_home(self, name: str) -> Path:

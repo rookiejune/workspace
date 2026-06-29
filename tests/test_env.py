@@ -118,12 +118,12 @@ def test_homes_default_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
     with pytest.warns(RuntimeWarning, match=env.Location.US.value):
-        assert env.static_home() == env.US_HOME
+        assert env.static_home() == env.US_STATIC_HOME
     with pytest.warns(RuntimeWarning, match=env.Location.US.value):
-        assert env.dynamic_home() == env.US_HOME / "dynamic"
+        assert env.dynamic_home() == env.US_DYNAMIC_HOME
 
-    assert os.environ[env.STATIC_HOME_ENV] == "/share5_video/zhuyin"
-    assert os.environ[env.DYNAMIC_HOME_ENV] == "/share5_video/zhuyin/dynamic"
+    assert os.environ[env.STATIC_HOME_ENV] == "/zoomai/colddata/video/yin.zhu"
+    assert os.environ[env.DYNAMIC_HOME_ENV] == "/share5_video/users/yin.zhu"
 
 
 def test_explicit_homes_override_location(monkeypatch: pytest.MonkeyPatch) -> None:

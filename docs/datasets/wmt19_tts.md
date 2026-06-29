@@ -68,6 +68,8 @@ python scripts/prepare_wmt19_tts.py
 默认输出到 `$STATIC_HOME/datasets/wmt19_tts`。其中 `base` 是 source/target 文本和
 waveform 的 TTS store；报告放在 `reports/` 下。生成 target audio
 时，脚本会先生成 source audio，再用 source audio 作为 target 的 MOSS reference。
+target 阶段默认只取 source audio 前 8 秒作为 reference，避免 MOSS tokenizer 对长
+reference 做二次编码时 OOM；中间 store 名会带 `target-audio-ref8s`。
 可提交任务入口是：
 
 ```bash
