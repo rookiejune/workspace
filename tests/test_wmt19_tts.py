@@ -24,7 +24,7 @@ def test_wmt19_tts_uses_explicit_dataset_dir(
     dataset = module.wmt19_tts(dataset_dir="/data/wmt19", split="dev")
 
     assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/wmt19/longcat-delta"
+    assert dataset.spec.path == "/data/wmt19/base"
     assert dataset.spec.split == "dev"
 
 
@@ -34,7 +34,20 @@ def test_wmt19_tts_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
     dataset = module.wmt19_tts()
 
-    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/longcat-delta"
+    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/base"
+
+
+def test_wmt19_tts_longcat_uses_longcat_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STATIC_HOME", "/data/static")
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_longcat(dataset_dir="/data/wmt19", split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/wmt19/longcat-delta"
+    assert dataset.spec.split == "dev"
 
 
 def test_wmt19_tts_rejects_empty_static_home(
@@ -53,7 +66,7 @@ def test_wmt19_tts_defaults_to_fudan_static_home(monkeypatch: pytest.MonkeyPatch
     with pytest.warns(RuntimeWarning, match="STATIC_HOME"):
         dataset = module.wmt19_tts()
 
-    assert dataset.spec.path == "/mnt/pami202/zhuyin/datasets/wmt19_tts/longcat-delta"
+    assert dataset.spec.path == "/mnt/pami202/zhuyin/datasets/wmt19_tts/base"
 
 
 def test_wmt19_tts_configures_derived_environment(
