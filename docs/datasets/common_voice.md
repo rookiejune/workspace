@@ -12,6 +12,7 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 
 1. `common_voice(root=...)`
 2. `$STATIC_HOME/datasets/common_voice`
+3. `/mnt/pami202/zhuyin/datasets/common_voice`，同时发 warning
 
 如果 `root` 指向 `cv-corpus-*` 下面的具体语种目录，语种由目录名推断；否则交给
 anydataset 的 Common Voice preset 从根目录结构推断最新语料版本和默认语种。

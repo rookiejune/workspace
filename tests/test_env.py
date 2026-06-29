@@ -8,16 +8,30 @@ import pytest
 from zhuyin import env
 
 
-def test_static_home_requires_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_static_home_defaults_to_fudan_with_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+
+    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
+        assert env.static_home() == env.DEFAULT_STATIC_HOME
+
+    assert os.environ[env.STATIC_HOME_ENV] == str(env.DEFAULT_STATIC_HOME)
+
+
+def test_dynamic_home_defaults_to_fudan_with_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
+
+    with pytest.warns(RuntimeWarning, match=env.DYNAMIC_HOME_ENV):
+        assert env.dynamic_home() == env.DEFAULT_DYNAMIC_HOME
+
+    assert os.environ[env.DYNAMIC_HOME_ENV] == str(env.DEFAULT_DYNAMIC_HOME)
+
+
+def test_homes_reject_empty_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.STATIC_HOME_ENV, "")
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "")
 
     with pytest.raises(ValueError, match=env.STATIC_HOME_ENV):
         env.static_home()
-
-
-def test_dynamic_home_requires_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
-
     with pytest.raises(ValueError, match=env.DYNAMIC_HOME_ENV):
         env.dynamic_home()
 
@@ -44,6 +58,20 @@ def test_configure_environment_respects_explicit_values(
 
     assert os.environ[env.ANYDATASET_HOME_ENV] == "/custom/anydataset"
     assert os.environ[env.HF_HOME_ENV] == "/custom/hf"
+
+
+def test_configure_environment_uses_fudan_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+    monkeypatch.delenv(env.ANYDATASET_HOME_ENV, raising=False)
+    monkeypatch.delenv(env.HF_HOME_ENV, raising=False)
+
+    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
+        env.configure_environment()
+
+    assert os.environ[env.ANYDATASET_HOME_ENV] == "/mnt/pami202/zhuyin/anydataset"
+    assert os.environ[env.HF_HOME_ENV] == "/mnt/pami202/zhuyin/huggingface"
 
 
 def test_configure_environment_rejects_empty_derived_values(

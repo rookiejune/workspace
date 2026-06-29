@@ -22,9 +22,10 @@ def test_common_voice_builds_split(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     dataset = common_voice(root=tmp_path)
 
-    assert dataset.spec.path == str(corpus)
+    assert dataset.spec.path == str(corpus.parent)
     assert dataset.spec.split == "train"
     assert dataset.spec.version == "24.0-2025-12-05"
+    assert dataset.spec.load_options["subdirs"] == ("en",)
 
 
 def test_common_voice_accepts_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,8 +41,9 @@ def test_common_voice_accepts_args(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     dataset = common_voice(root=tmp_path, split="dev")
 
-    assert dataset.spec.path == str(corpus)
+    assert dataset.spec.path == str(corpus.parent)
     assert dataset.spec.split == "dev"
+    assert dataset.spec.load_options["subdirs"] == ("en",)
 
 
 def test_dataset_root_prefers_explicit_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,8 +68,9 @@ def test_common_voice_infers_language_from_language_root(
 
     dataset = common_voice(root=corpus)
 
-    assert dataset.spec.path == str(corpus)
+    assert dataset.spec.path == str(corpus.parent)
     assert dataset.spec.version == "24.0-2025-12-05"
+    assert dataset.spec.load_options["subdirs"] == ("zh-CN",)
 
 
 def test_dataset_root_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,11 +79,11 @@ def test_dataset_root_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
     assert dataset_root() == Path("/data/static/datasets/common_voice")
 
 
-def test_dataset_root_requires_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_root_defaults_to_fudan(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STATIC_HOME", raising=False)
 
-    with pytest.raises(ValueError, match="STATIC_HOME"):
-        dataset_root()
+    with pytest.warns(RuntimeWarning, match="STATIC_HOME"):
+        assert dataset_root() == Path("/mnt/pami202/zhuyin/datasets/common_voice")
 
 
 def test_common_voice_sample_contains_speaker_label(

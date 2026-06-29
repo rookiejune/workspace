@@ -28,8 +28,9 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 LongCat decoder 还原 source/target 波形供试听。
 
 默认数据集根目录是 `$STATIC_HOME/datasets/wmt19_tts`，默认 store 子目录是
-`longcat-delta`。调用入口时会根据 `STATIC_HOME` 补齐缺失的 `ANYDATASET_HOME` 和
-`HF_HOME`。
+`longcat-delta`。如果 `STATIC_HOME` 未设置，入口会使用复旦共享默认
+`/mnt/pami202/zhuyin` 并发 warning。调用入口时会根据 `STATIC_HOME` 或该默认值补齐
+缺失的 `ANYDATASET_HOME` 和 `HF_HOME`。
 临时使用其他数据集根目录时，直接传 `dataset_dir=...`。
 
 数据契约和 speech-to-speech 保持一致：source 和 target 两侧 audio 都包含

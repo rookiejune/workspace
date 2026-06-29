@@ -46,11 +46,14 @@ def test_wmt19_tts_rejects_empty_static_home(
         module.wmt19_tts()
 
 
-def test_wmt19_tts_requires_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wmt19_tts_defaults_to_fudan_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STATIC_HOME", raising=False)
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    with pytest.raises(ValueError, match="STATIC_HOME"):
-        module.wmt19_tts()
+    with pytest.warns(RuntimeWarning, match="STATIC_HOME"):
+        dataset = module.wmt19_tts()
+
+    assert dataset.spec.path == "/mnt/pami202/zhuyin/datasets/wmt19_tts/longcat-delta"
 
 
 def test_wmt19_tts_configures_derived_environment(
