@@ -5,4 +5,4 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 cd "$WORKSPACE_ROOT"
 
-"$WORKSPACE_PYTHON" scripts/prepare_wmt19_tts_longcat_bpe.py "$@"
+python scripts/prepare_wmt19_tts_longcat_bpe.py "$@"
