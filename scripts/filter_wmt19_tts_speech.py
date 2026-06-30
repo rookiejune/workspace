@@ -38,7 +38,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "filter": filter_summary,
         "seconds": time.perf_counter() - started_at,
     }
-    write_json(args.reports_dir / "filter_summary.json", summary)
+    write_json(args.reports_dir / "speech_filter_summary.json", summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
@@ -49,6 +49,7 @@ def apply_speech_filter(args: argparse.Namespace) -> dict[str, Any]:
     result = rule.apply(
         dataset_factory=dataset_factory,
         metrics=True,
+        device=args.filter_device,
         num_workers=args.num_workers,
         commit_samples=args.filter_commit_samples,
         max_shard_samples=args.max_shard_samples,
@@ -174,6 +175,7 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "root": str(args.root),
         "tts_store": str(args.root / "base"),
         "split": args.split,
+        "filter_device": args.filter_device,
         "quality_device": args.quality_device,
         "whisper_model": args.whisper_model,
         "filter_rule_name": args.filter_rule_name,
@@ -199,11 +201,12 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Filter the prepared workspace WMT19 zh-en TTS dataset."
+        description="Filter the prepared workspace WMT19 zh-en TTS dataset by speech quality."
     )
     parser.add_argument("--root", type=Path)
     parser.add_argument("--split", default="train")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
+    parser.add_argument("--filter-device", default="auto")
     parser.add_argument("--quality-device")
     parser.add_argument("--whisper-model", default="large-v3-turbo")
     parser.add_argument("--min-utmos", type=float, default=2.8)

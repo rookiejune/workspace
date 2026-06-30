@@ -206,10 +206,16 @@ def test_parse_hz_tts_row_loads_logical_sample(
     target_audio = sample[Role.TARGET, Modality.AUDIO]
     target_text = sample[Role.TARGET, Modality.TEXT]
 
-    assert source_audio.views[AudioView.WAVEFORM] == ("/data/shard_0/source.wav", 16_000)
+    assert source_audio.views[AudioView.WAVEFORM] == (
+        "/data/train/shard_0/source.wav",
+        16_000,
+    )
     assert source_text.views[TextView.TEXT] == "你好"
     assert source_text.meta[TextMeta.LANG] == "zh"
-    assert target_audio.views[AudioView.WAVEFORM] == ("/data/shard_0/target.wav", 16_000)
+    assert target_audio.views[AudioView.WAVEFORM] == (
+        "/data/train/shard_0/target.wav",
+        16_000,
+    )
     assert target_text.views[TextView.TEXT] == "hello"
     assert target_text.meta[TextMeta.LANG] == "en"
 

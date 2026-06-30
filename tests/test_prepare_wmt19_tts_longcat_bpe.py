@@ -52,6 +52,14 @@ def test_longcat_corpus_yields_source_and_target_sequences() -> None:
     ]
 
 
+def test_corpus_factory_returns_replayable_corpus() -> None:
+    dataset = FakeDataset([sample(source=[1, 2, 3], target=[4, 5])])
+    factory = script.corpus_factory(dataset)
+
+    assert callable(factory)
+    assert list(factory()) == list(factory())
+
+
 def test_run_writes_bpe_artifact_and_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

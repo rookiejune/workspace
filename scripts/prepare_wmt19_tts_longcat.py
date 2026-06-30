@@ -7,12 +7,11 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 from anydataset import AnyDataset, ViewMaterializer
 from anydataset.provider.longcat import LongCatProvider
-from anydataset.store.reader import read_store_dataset
+from anydataset.store.reader import read_store_manifest
 
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
 from zhuyin.env import configure_environment as configure_workspace_environment
@@ -51,36 +50,26 @@ def write_longcat_store(args: argparse.Namespace) -> Stage:
         return ready_stage("longcat", args.longcat_store)
 
     start = time.perf_counter()
-    with TemporaryDirectory(
-        prefix=f".{WMT19_TTS}-longcat-",
-        dir=str(args.root),
-    ) as tmpdir:
-        longcat_view_store = Path(tmpdir) / "longcat-view"
-        ViewMaterializer(
-            longcat_view_store,
-            split=args.split,
-            max_shard_samples=args.max_shard_samples,
-            batch_size=args.batch_size,
-        ).write(
-            dataset_factory=TTSFactory(args.split),
-            provider_factory=LongCatFactory(),
-            devices=args.devices,
-        )
-
-        wmt19_tts(split=args.split).merge(
-            store_dataset(longcat_view_store, args.split)
-        ).write(
-            args.longcat_store,
-            dataset_id=args.dataset_id,
-            split=args.split,
-            max_shard_samples=args.max_shard_samples,
-        )
+    ViewMaterializer(
+        args.longcat_store,
+        split=args.split,
+        max_shard_samples=args.max_shard_samples,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        prefetch_factor=args.prefetch_factor,
+        dataset_id=args.dataset_id,
+    ).write(
+        dataset_factory=TTSFactory(args.split),
+        provider_factory=LongCatFactory(),
+        devices=args.devices,
+        resume=args.resume,
+    )
     return Stage(
         name="longcat",
         path=str(args.longcat_store),
         reused=False,
         seconds=time.perf_counter() - start,
-        sample_count=len(read_store_dataset(args.longcat_store)),
+        sample_count=store_sample_count(args.longcat_store),
     )
 
 
@@ -100,31 +89,28 @@ class LongCatFactory:
         )
 
 
-def store_dataset(path: Path, split: str) -> AnyDataset:
-    from anydataset import Source, Spec
-
-    return AnyDataset(Spec(source=Source.STORE, path=str(path), split=split))
-
-
 def is_ready_store(path: Path) -> bool:
     if not path.exists():
         return False
     try:
-        read_store_dataset(path)
+        read_store_manifest(path)
     except Exception:
         return False
     return True
 
 
 def ready_stage(name: str, path: Path) -> Stage:
-    store = read_store_dataset(path)
     return Stage(
         name=name,
         path=str(path),
         reused=True,
         seconds=None,
-        sample_count=len(store),
+        sample_count=store_sample_count(path),
     )
+
+
+def store_sample_count(path: Path) -> int:
+    return read_store_manifest(path).sample_count
 
 
 def configure_env(args: argparse.Namespace) -> None:
@@ -141,9 +127,13 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "root": str(args.root),
         "tts_store": str(args.root / "base"),
         "longcat_store": str(args.longcat_store),
+        "dataset_id": args.dataset_id,
         "split": args.split,
         "devices": args.devices,
         "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "prefetch_factor": args.prefetch_factor,
+        "resume": args.resume,
     }
 
 
@@ -165,6 +155,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--devices", default="auto")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--prefetch-factor", type=int)
+    parser.add_argument("--resume", action="store_true")
     return parser.parse_args(argv)
 
 

@@ -1,0 +1,306 @@
+"""Apply chained translation and speech quality filters to WMT19 TTS.
+
+The script composes the reusable text-translation and speech-quality predicates
+as cached anydataset filter stages. Reports live under the WMT19 TTS reports
+root resolved by workspace environment settings.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+from collections.abc import Iterable, Mapping, Sequence
+from enum import StrEnum, auto
+from itertools import islice
+from pathlib import Path
+from typing import Any, cast
+
+import filter_wmt19_tts_speech as speech_filter
+import filter_wmt19_tts_translation as translation_filter
+from anydataset import FilteredDataset, FilterRule
+
+from zhuyin.datasets.wmt19_tts import WMT19_TTS
+from zhuyin.env import configure_environment as configure_workspace_environment
+from zhuyin.env import dataset_dir, whisper_root
+
+
+class Stage(StrEnum):
+    TRANSLATION = auto()
+    SPEECH = auto()
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    configure_env(args)
+    args.reports_dir.mkdir(parents=True, exist_ok=True)
+
+    started_at = time.perf_counter()
+    stages = apply_filters(args)
+    summary = {
+        "config": run_config(args),
+        "stages": stages,
+        "final": stages[-1],
+        "seconds": time.perf_counter() - started_at,
+    }
+    write_json(args.reports_dir / "summary.json", summary)
+    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def apply_filters(args: argparse.Namespace) -> list[dict[str, Any]]:
+    factory: Any = translation_filter.StoreFactory(
+        args.root if args.root_explicit else None,
+        args.split,
+    )
+    summaries: list[dict[str, Any]] = []
+    for stage in args.order:
+        if stage is Stage.TRANSLATION:
+            started_at = time.perf_counter()
+            result = apply_translation_stage(args, factory)
+            summaries.append(
+                translation_summary(
+                    args,
+                    result,
+                    seconds=time.perf_counter() - started_at,
+                )
+            )
+            factory = result.select_by(*args.translation_labels).dataset_factory
+        if stage is Stage.SPEECH:
+            started_at = time.perf_counter()
+            result = apply_speech_stage(args, factory)
+            summaries.append(
+                speech_summary(
+                    args,
+                    result,
+                    seconds=time.perf_counter() - started_at,
+                )
+            )
+            factory = result.select_by("accept").dataset_factory
+    return summaries
+
+
+def apply_translation_stage(
+    args: argparse.Namespace,
+    dataset_factory: Any,
+) -> FilteredDataset:
+    rule = FilterRule(
+        args.translation_rule_name,
+        translation_filter.TranslationQualityFactory.from_args(args),
+    )
+    return rule.apply(
+        dataset_factory=dataset_factory,
+        metrics=True,
+        device=args.translation_device,
+        batch_size=args.translation_batch_size,
+        num_workers=args.translation_num_workers,
+        prefetch_factor=args.translation_prefetch_factor,
+        commit_samples=args.translation_commit_samples,
+        max_shard_samples=args.max_shard_samples,
+    )
+
+
+def apply_speech_stage(
+    args: argparse.Namespace,
+    dataset_factory: Any,
+) -> FilteredDataset:
+    rule = FilterRule(
+        args.speech_rule_name,
+        speech_filter.SpeechQualityFactory.from_args(args),
+    )
+    return rule.apply(
+        dataset_factory=dataset_factory,
+        metrics=True,
+        device=args.speech_filter_device,
+        num_workers=args.speech_num_workers,
+        commit_samples=args.speech_commit_samples,
+        max_shard_samples=args.max_shard_samples,
+    )
+
+
+def translation_summary(
+    args: argparse.Namespace,
+    result: FilteredDataset,
+    *,
+    seconds: float,
+) -> dict[str, Any]:
+    metrics_report = args.reports_dir / "translation_quality_metrics.jsonl"
+    write_metrics_jsonl(metrics_report, result.iter_metrics())
+    return {
+        "name": Stage.TRANSLATION.value,
+        "rule_name": args.translation_rule_name,
+        "seconds": seconds,
+        "counts": dict(result.counts),
+        "labels": list(result.labels),
+        "selected_labels": list(args.translation_labels),
+        "selected_count": sum(result.counts.get(label, 0) for label in args.translation_labels),
+        "cache_path": str(result.cache_path),
+        "metrics_path": None if result.metrics_path is None else str(result.metrics_path),
+        "metrics_jsonl": str(metrics_report),
+        "preview": preview_metrics(metrics_report, limit=args.preview_metrics),
+    }
+
+
+def speech_summary(
+    args: argparse.Namespace,
+    result: FilteredDataset,
+    *,
+    seconds: float,
+) -> dict[str, Any]:
+    metrics_report = args.reports_dir / "speech_quality_metrics.jsonl"
+    write_metrics_jsonl(metrics_report, result.iter_metrics())
+    return {
+        "name": Stage.SPEECH.value,
+        "rule_name": args.speech_rule_name,
+        "seconds": seconds,
+        "counts": dict(result.counts),
+        "labels": list(result.labels),
+        "selected_labels": ["accept"],
+        "selected_count": result.counts.get("accept", 0),
+        "cache_path": str(result.cache_path),
+        "metrics_path": None if result.metrics_path is None else str(result.metrics_path),
+        "metrics_jsonl": str(metrics_report),
+        "preview": preview_metrics(metrics_report, limit=args.preview_metrics),
+    }
+
+
+def write_metrics_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
+    output: list[Mapping[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in islice(handle, limit):
+            output.append(cast(Mapping[str, Any], json.loads(line)))
+    return output
+
+
+def configure_env(args: argparse.Namespace) -> None:
+    configure_workspace_environment()
+    args.root_explicit = args.root is not None
+    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = args.root.expanduser().resolve()
+    args.reports_dir = args.root / "reports" / "speech_translation"
+    args.whisper_root = whisper_root()
+    os.environ["HF_ENDPOINT"] = args.hf_endpoint
+
+
+def run_config(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "root": str(args.root),
+        "tts_store": str(args.root / "base"),
+        "split": args.split,
+        "order": [stage.value for stage in args.order],
+        "translation": {
+            "rule_name": args.translation_rule_name,
+            "device": args.translation_device,
+            "selected_labels": list(args.translation_labels),
+            "source_lang": args.source_lang,
+            "target_lang": args.target_lang,
+            "thresholds": {
+                "min_chars": args.min_chars,
+                "review_min_ratio": args.review_min_ratio,
+                "review_max_ratio": args.review_max_ratio,
+                "reject_min_ratio": args.reject_min_ratio,
+                "reject_max_ratio": args.reject_max_ratio,
+                "min_script_ratio": args.min_script_ratio,
+                "reject_script_ratio": args.reject_script_ratio,
+                "min_script_chars": args.min_script_chars,
+                "max_control_ratio": args.max_control_ratio,
+                "max_repeated_run": args.max_repeated_run,
+            },
+        },
+        "speech": {
+            "rule_name": args.speech_rule_name,
+            "filter_device": args.speech_filter_device,
+            "quality_device": args.quality_device,
+            "whisper_model": args.whisper_model,
+            "thresholds": {
+                "min_utmos": args.min_utmos,
+                "max_wer": args.max_wer,
+                "min_chrf": args.min_chrf,
+                "max_seconds_per_text_unit": args.max_seconds_per_text_unit,
+                "min_peak_amplitude": args.min_peak_amplitude,
+                "min_bleu": args.min_bleu,
+            },
+        },
+    }
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Filter WMT19 zh-en TTS by chained translation and speech quality."
+    )
+    parser.add_argument("--root", type=Path)
+    parser.add_argument("--split", default="train")
+    parser.add_argument("--order", type=parse_order, default=parse_order("translation,speech"))
+    parser.add_argument("--max-shard-samples", type=int, default=100_000)
+    parser.add_argument("--preview-metrics", type=int, default=5)
+    parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
+
+    parser.add_argument("--source-lang", default="zh")
+    parser.add_argument("--target-lang", default="en")
+    parser.add_argument("--translation-device", default="cpu")
+    parser.add_argument(
+        "--translation-rule-name",
+        default="wmt19_zh_en_translation_quality_rules_v1",
+    )
+    parser.add_argument("--translation-labels", nargs="+", default=["clean", "usable"])
+    parser.add_argument("--translation-commit-samples", type=int, default=100_000)
+    parser.add_argument("--translation-batch-size", type=int, default=1)
+    parser.add_argument("--translation-num-workers", type=int, default=0)
+    parser.add_argument("--translation-prefetch-factor", type=int)
+    parser.add_argument("--min-chars", type=int, default=1)
+    parser.add_argument("--review-min-ratio", type=float, default=0.2)
+    parser.add_argument("--review-max-ratio", type=float, default=6.0)
+    parser.add_argument("--reject-min-ratio", type=float, default=0.05)
+    parser.add_argument("--reject-max-ratio", type=float, default=20.0)
+    parser.add_argument("--min-script-ratio", type=float, default=0.45)
+    parser.add_argument("--reject-script-ratio", type=float, default=0.2)
+    parser.add_argument("--min-script-chars", type=int, default=4)
+    parser.add_argument("--max-control-ratio", type=float, default=0.02)
+    parser.add_argument("--max-repeated-run", type=int, default=24)
+
+    parser.add_argument("--speech-filter-device", default="auto")
+    parser.add_argument("--quality-device")
+    parser.add_argument("--whisper-model", default="large-v3-turbo")
+    parser.add_argument("--min-utmos", type=float, default=2.8)
+    parser.add_argument("--max-wer", type=float, default=None)
+    parser.add_argument("--min-chrf", type=float, default=50.0)
+    parser.add_argument("--max-seconds-per-text-unit", type=float, default=4.0)
+    parser.add_argument("--min-peak-amplitude", type=float, default=0.05)
+    parser.add_argument("--min-bleu", type=float, default=None)
+    parser.add_argument(
+        "--speech-rule-name",
+        default="wmt19_zh_en_tts_speech_quality_v2_utmos28_chrf50_len4_peak005_zhsimp",
+    )
+    parser.add_argument("--speech-commit-samples", type=int, default=16)
+    parser.add_argument("--speech-num-workers", type=int, default=1)
+    return parser.parse_args(argv)
+
+
+def parse_order(value: str) -> tuple[Stage, ...]:
+    stages = tuple(Stage(item.strip()) for item in value.split(",") if item.strip())
+    if stages not in (
+        (Stage.TRANSLATION, Stage.SPEECH),
+        (Stage.SPEECH, Stage.TRANSLATION),
+    ):
+        raise argparse.ArgumentTypeError(
+            "order must be `translation,speech` or `speech,translation`."
+        )
+    return stages
+
+
+if __name__ == "__main__":
+    main()

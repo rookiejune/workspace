@@ -23,7 +23,9 @@ Common wrappers:
 ```bash
 jobs/prepare_wmt19_tts.sh
 jobs/prepare_wmt19_tts_longcat.sh
-jobs/filter_wmt19_tts.sh
+jobs/filter_wmt19_tts_speech.sh
+jobs/filter_wmt19_tts_translation.sh
+jobs/filter_wmt19_tts_speech_translation.sh
 jobs/prepare_wmt19_tts_longcat_bpe.sh
 ```
 

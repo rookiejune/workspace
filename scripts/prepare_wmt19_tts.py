@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
@@ -34,7 +35,7 @@ from anydataset import (
     TextView,
 )
 from anydataset.provider.moss_tts import MossTTSProvider
-from anydataset.store.reader import read_store_dataset
+from anydataset.store.reader import read_store_manifest
 from anytrain.tts import TTSOptions
 
 from zhuyin.env import configure_environment as configure_workspace_environment
@@ -91,6 +92,7 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
                 split=args.split,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
+                offset=args.offset,
                 limit=args.limit,
             )
         )
@@ -136,13 +138,16 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
         split=args.split,
         max_shard_samples=args.max_shard_samples,
     )
-    return Stage(
+    stage = Stage(
         name="tts",
         path=str(args.tts_store),
         reused=False,
         seconds=time.perf_counter() - start,
-        sample_count=len(read_store_dataset(args.tts_store)),
+        sample_count=store_sample_count(args.tts_store),
     )
+    if args.cleanup_work:
+        shutil.rmtree(work)
+    return stage
 
 
 @dataclass(frozen=True)
@@ -217,6 +222,7 @@ def limited_wmt19_samples(
     split: str,
     source_lang: str,
     target_lang: str,
+    offset: int,
     limit: int,
 ) -> Iterable[Sample]:
     dataset = Preset.WMT19.create(
@@ -225,7 +231,7 @@ def limited_wmt19_samples(
         target_lang=target_lang,
         streaming=True,
     )
-    yield from islice(dataset, limit)
+    yield from islice(dataset, offset, offset + limit)
 
 
 def role_text_dataset(
@@ -284,21 +290,24 @@ def is_ready_store(path: Path) -> bool:
     if not path.exists():
         return False
     try:
-        read_store_dataset(path)
+        read_store_manifest(path)
     except Exception:
         return False
     return True
 
 
 def ready_stage(name: str, path: Path) -> Stage:
-    store = read_store_dataset(path)
     return Stage(
         name=name,
         path=str(path),
         reused=True,
         seconds=None,
-        sample_count=len(store),
+        sample_count=store_sample_count(path),
     )
+
+
+def store_sample_count(path: Path) -> int:
+    return read_store_manifest(path).sample_count
 
 
 def tts_options(args: argparse.Namespace) -> TTSOptions:
@@ -368,7 +377,9 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "split": args.split,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
+        "offset": args.offset,
         "limit": args.limit,
+        "cleanup_work": args.cleanup_work,
         "devices": args.devices,
         "tts_batch_size": args.tts_batch_size,
         "tts_reference_seconds": args.tts_reference_seconds,
@@ -396,7 +407,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--split", default="train")
     parser.add_argument("--source-lang", default="zh")
     parser.add_argument("--target-lang", default="en")
+    parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument(
+        "--cleanup-work",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--dataset-id", default=WMT19_TTS)
     parser.add_argument("--devices", default="auto")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)

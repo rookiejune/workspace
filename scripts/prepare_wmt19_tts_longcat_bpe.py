@@ -10,8 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict
+from functools import partial
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -73,7 +74,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         bpe = CodecBPE.from_pretrained(artifact_dir)
     else:
         bpe = CodecBPE.train(
-            corpus(dataset, sample_limit=args.sample_limit),
+            corpus_factory(dataset, sample_limit=args.sample_limit),
             codebook_sizes=codebook_sizes,
             vocab_size=args.vocab_size,
             min_frequency=args.min_frequency,
@@ -84,6 +85,16 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         bpe.save_pretrained(artifact_dir)
         write_meta(artifact_dir, args, dataset.spec.to_dict(), codebook_sizes)
     return summarize(artifact_dir, bpe, dataset, sample_limit=args.sample_limit)
+
+
+def corpus_factory(
+    dataset: Sequence[Sample],
+    *,
+    sample_limit: int | None = None,
+) -> Callable[[], Iterable[list[list[int]]]]:
+    """Return a replayable corpus factory for multi-pass BPE training."""
+
+    return partial(corpus, dataset, sample_limit=sample_limit)
 
 
 def corpus(

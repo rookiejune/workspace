@@ -75,10 +75,10 @@ def wmt19_tts_longcat(
 ) -> AnyDataset:
     """Return the logical WMT19 zh-en TTS LongCat view dataset.
 
-    It contains source and target audio items with waveform and
-    `AudioView.LONGCAT` views, each including `semantic_codes` and
-    `acoustic_codes`. The default physical profile is selected by `LOCATION`
-    unless `dataset_dir` or `profile` is explicit.
+    It contains source and target audio items with `AudioView.LONGCAT` views,
+    each including `semantic_codes` and `acoustic_codes`. The default physical
+    profile is selected by `LOCATION` unless `dataset_dir` or `profile` is
+    explicit.
     """
 
     configure_environment()
