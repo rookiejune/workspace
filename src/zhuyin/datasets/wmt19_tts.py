@@ -195,12 +195,16 @@ def _parse_hz_longcat_side(
     prefix: str,
 ) -> dict[tuple[Role, Modality], Any]:
     try:
+        semantic_codes, acoustic_codes = _aligned_longcat_codes(
+            semantic_codes=_tensor(row[f"{prefix}_semantic_codes"]),
+            acoustic_codes=_tensor(row[f"{prefix}_acoustic_codes"]),
+        )
         return {
             (role, Modality.AUDIO): AudioItem(
                 views={
                     AudioView.LONGCAT: {
-                        "semantic_codes": _tensor(row[f"{prefix}_semantic_codes"]),
-                        "acoustic_codes": _tensor(row[f"{prefix}_acoustic_codes"]),
+                        "semantic_codes": semantic_codes,
+                        "acoustic_codes": acoustic_codes,
                     },
                 },
             ),
@@ -211,6 +215,15 @@ def _parse_hz_longcat_side(
         }
     except Exception as e:
         raise ValueError(f"invalid HZ WMT19 TTS LongCat row: {row}") from e
+
+
+def _aligned_longcat_codes(
+    *,
+    semantic_codes: Tensor,
+    acoustic_codes: Tensor,
+) -> tuple[Tensor, Tensor]:
+    length = min(semantic_codes.shape[-1], acoustic_codes.shape[-1])
+    return semantic_codes[..., :length], acoustic_codes[..., :length]
 
 
 def _load_audio(path: str) -> Any:

@@ -259,3 +259,38 @@ def test_parse_hz_longcat_row_loads_logical_sample() -> None:
     )
     assert target_text.views[TextView.TEXT] == "hello"
     assert target_text.meta[TextMeta.LANG] == "en"
+
+
+def test_parse_hz_longcat_row_aligns_codes_to_shortest_length() -> None:
+    sample = module._parse_hz_longcat_row(
+        {
+            "source_semantic_codes": [1, 2, 3],
+            "source_acoustic_codes": [[4, 5]],
+            "source_text": "你好",
+            "source_language": "zh",
+            "target_semantic_codes": [6, 7],
+            "target_acoustic_codes": [[8, 9, 10]],
+            "target_text": "hello",
+            "target_language": "en",
+        }
+    )
+
+    source_audio = sample[Role.SOURCE, Modality.AUDIO]
+    target_audio = sample[Role.TARGET, Modality.AUDIO]
+
+    assert torch.equal(
+        source_audio.views[AudioView.LONGCAT]["semantic_codes"],
+        torch.tensor([1, 2]),
+    )
+    assert torch.equal(
+        source_audio.views[AudioView.LONGCAT]["acoustic_codes"],
+        torch.tensor([[4, 5]]),
+    )
+    assert torch.equal(
+        target_audio.views[AudioView.LONGCAT]["semantic_codes"],
+        torch.tensor([6, 7]),
+    )
+    assert torch.equal(
+        target_audio.views[AudioView.LONGCAT]["acoustic_codes"],
+        torch.tensor([[8, 9]]),
+    )
