@@ -9,13 +9,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from anydataset import AnyDataset, ViewMaterializer
+from anydataset import AnyDataset
 from anydataset.provider.longcat import LongCatProvider
+from anydataset.store import ViewMaterializer
 from anydataset.store.reader import read_store_manifest
 
+from zhuyin.datasets._profiles import WMT19TTSProfile
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
-from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir
+from zhuyin.env import context, datasets_home
 
 LONGCAT_STORE_DIR = "longcat"
 
@@ -31,18 +32,19 @@ class Stage:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    configure_env(args)
-    args.reports_dir.mkdir(parents=True, exist_ok=True)
+    with context():
+        configure_env(args)
+        args.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = time.perf_counter()
-    stage = write_longcat_store(args)
-    summary = {
-        "config": run_config(args),
-        "stage": asdict(stage),
-        "seconds": time.perf_counter() - started_at,
-    }
-    write_json(args.reports_dir / "prepare_longcat_summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        started_at = time.perf_counter()
+        stage = write_longcat_store(args)
+        summary = {
+            "config": run_config(args),
+            "stage": asdict(stage),
+            "seconds": time.perf_counter() - started_at,
+        }
+        write_json(args.reports_dir / "prepare_longcat_summary.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def write_longcat_store(args: argparse.Namespace) -> Stage:
@@ -56,13 +58,13 @@ def write_longcat_store(args: argparse.Namespace) -> Stage:
         max_shard_samples=args.max_shard_samples,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        prefetch_factor=args.prefetch_factor,
-        dataset_id=args.dataset_id,
+        prefetch_factor=args.read_prefetch,
+        write_workers=args.write_workers,
+        write_prefetch=args.write_prefetch,
     ).write(
-        dataset_factory=TTSFactory(args.split),
+        dataset_factory=TTSFactory(args.split, args.root),
         provider_factory=LongCatFactory(),
         devices=args.devices,
-        resume=args.resume,
     )
     return Stage(
         name="longcat",
@@ -76,9 +78,16 @@ def write_longcat_store(args: argparse.Namespace) -> Stage:
 @dataclass(frozen=True)
 class TTSFactory:
     split: str
+    dataset_dir: Path | None = None
 
     def __call__(self) -> AnyDataset:
-        return wmt19_tts(split=self.split)
+        if self.dataset_dir is None:
+            return wmt19_tts(split=self.split)
+        return wmt19_tts(
+            dataset_dir=self.dataset_dir,
+            profile=WMT19TTSProfile.STORE,
+            split=self.split,
+        )
 
 
 @dataclass(frozen=True)
@@ -114,8 +123,7 @@ def store_sample_count(path: Path) -> int:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    configure_workspace_environment()
-    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
     args.root = args.root.expanduser().resolve()
     args.root.mkdir(parents=True, exist_ok=True)
     args.longcat_store = args.root / LONGCAT_STORE_DIR
@@ -127,13 +135,14 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "root": str(args.root),
         "tts_store": str(args.root / "base"),
         "longcat_store": str(args.longcat_store),
-        "dataset_id": args.dataset_id,
         "split": args.split,
         "devices": args.devices,
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
-        "prefetch_factor": args.prefetch_factor,
-        "resume": args.resume,
+        "read_prefetch": args.read_prefetch,
+        "write_workers": args.write_workers,
+        "write_prefetch": args.write_prefetch,
+        "resume": True,
     }
 
 
@@ -151,13 +160,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--root", type=Path)
     parser.add_argument("--split", default="train")
-    parser.add_argument("--dataset-id", default=WMT19_TTS)
     parser.add_argument("--devices", default="auto")
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--prefetch-factor", type=int)
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--read-prefetch", dest="read_prefetch", type=int)
+    parser.add_argument("--write-workers", type=int, default=1)
+    parser.add_argument("--write-prefetch", type=int)
     return parser.parse_args(argv)
 
 

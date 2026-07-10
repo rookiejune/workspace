@@ -7,30 +7,38 @@ select the default storage protocol and physical root used to build them.
 
 from __future__ import annotations
 
-from enum import StrEnum, auto
+from enum import auto
 from pathlib import Path
 from typing import Self
 
-from ..env import HZ_HOME, Location, location
+from .._compat import StrEnum
+from ..env import HzEnv, Location, location
 
-HZ_WMT19_TTS_EXPORT_ROOT = HZ_HOME / "train" / "text_to_speech" / "moss_tts_hz_export"
-HZ_WMT19_TTS_LONGCAT_ROOT = HZ_HOME / "datasets" / "wmt19_tts_longcat_codes_text_cleaned"
+HZ_WMT19_TTS_EXPORT_ROOT = (
+    HzEnv.static_home / "train" / "text_to_speech" / "moss_tts_hz_export"
+)
+HZ_WMT19_TTS_LONGCAT_ROOT = (
+    HzEnv.static_home / "datasets" / "wmt19_tts_longcat_codes_text_cleaned"
+)
 
 
-class WMT19TTSProfile(StrEnum):
+class _Profile(StrEnum):
+    @classmethod
+    def resolve(cls, value: Self | str | None) -> Self:
+        if value is not None:
+            return cls(value)
+        return cls.default()
+
+    @classmethod
+    def default(cls) -> Self:
+        raise NotImplementedError
+
+
+class WMT19TTSProfile(_Profile):
     """Physical profiles that resolve to the logical WMT19 TTS dataset."""
 
     STORE = auto()
     HZ_EXPORT = auto()
-
-    @classmethod
-    def resolve(
-        cls,
-        value: Self | str | None,
-    ) -> Self:
-        if value is not None:
-            return cls(value)
-        return cls.default()
 
     @classmethod
     def default(cls) -> Self:
@@ -45,20 +53,11 @@ class WMT19TTSProfile(StrEnum):
         raise ValueError(f"{self.value} profile does not own a standalone root.")
 
 
-class WMT19TTSLongCatProfile(StrEnum):
+class WMT19TTSLongCatProfile(_Profile):
     """Physical profiles that resolve to the logical WMT19 TTS LongCat dataset."""
 
     STORE = auto()
     HZ_HF_DISK_CODES = auto()
-
-    @classmethod
-    def resolve(
-        cls,
-        value: Self | str | None,
-    ) -> Self:
-        if value is not None:
-            return cls(value)
-        return cls.default()
 
     @classmethod
     def default(cls) -> Self:

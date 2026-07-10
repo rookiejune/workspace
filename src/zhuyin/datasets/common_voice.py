@@ -13,7 +13,7 @@ from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from zhuyin.env import configure_environment, dataset_dir
+from zhuyin.env import datasets_home
 
 if TYPE_CHECKING:
     from anydataset.dataset import MultipleAnyDataset
@@ -44,7 +44,6 @@ def common_voice(
 
     from anydataset import Preset
 
-    configure_environment()
     resolved = _root(root)
     return Preset.COMMON_VOICE.create(
         root=resolved.path,
@@ -59,7 +58,7 @@ def dataset_root(root: str | PathLike[str] | None = None) -> Path:
     if root is not None:
         return _expand(root)
 
-    return dataset_dir(DATASET_NAME)
+    return datasets_home() / DATASET_NAME
 
 
 def _root(root: str | PathLike[str] | None = None) -> _Root:

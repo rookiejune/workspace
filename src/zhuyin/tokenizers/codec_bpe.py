@@ -1,16 +1,17 @@
-"""Load prepared LongCat semantic BPE tokenizer artifacts.
+"""Load prepared semantic BPE tokenizer artifacts.
 
-This module resolves reusable LongCat BPE artifacts from the workspace static
+This module resolves reusable BPE artifacts from the workspace static
 cache. It exposes the artifact path for jobs that only need to pass a location,
 and a lazy `CodecBPE` loader for callers that need the tokenizer object.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from zhuyin.env import bpe_cache_dir, configure_environment
+from zhuyin.env import static_home
 
 if TYPE_CHECKING:
     from anytrain.tokenizer import CodecBPE
@@ -22,7 +23,7 @@ DEFAULT_MAX_TOKEN_LENGTH = None
 DEFAULT_CODEBOOK_SIZES = (8192,)
 
 
-def longcat_bpe_path(
+def codec_bpe_path(
     *,
     cache_dir: str | Path | None = None,
     codec_name: str = DEFAULT_CODEC_NAME,
@@ -34,23 +35,23 @@ def longcat_bpe_path(
 ) -> Path:
     """Return the workspace path for one LongCat BPE artifact."""
 
-    if cache_dir is None:
-        configure_environment()
-        root = bpe_cache_dir()
-    else:
-        root = Path(cache_dir).expanduser()
-    path = root / codec_name / artifact_name(
-        vocab_size=vocab_size,
-        min_frequency=min_frequency,
-        max_token_length=max_token_length,
-        codebook_sizes=codebook_sizes,
+    root = _cache_dir(cache_dir)
+    path = (
+        root
+        / codec_name
+        / artifact_name(
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+            max_token_length=max_token_length,
+            codebook_sizes=codebook_sizes,
+        )
     )
     if sample_limit is None:
         return path
     return path.with_name(f"{path.name}_samples_{sample_limit}")
 
 
-def longcat_bpe(
+def codec_bpe(
     *,
     cache_dir: str | Path | None = None,
     codec_name: str = DEFAULT_CODEC_NAME,
@@ -65,7 +66,7 @@ def longcat_bpe(
     from anytrain.tokenizer import CodecBPE
 
     return CodecBPE.from_pretrained(
-        longcat_bpe_path(
+        codec_bpe_path(
             cache_dir=cache_dir,
             codec_name=codec_name,
             vocab_size=vocab_size,
@@ -90,3 +91,15 @@ def artifact_name(
     codebooks = "x".join(str(size) for size in codebook_sizes)
     maxlen = "none" if max_token_length is None else str(max_token_length)
     return f"vocab_{vocab}_minfreq_{min_frequency}_maxlen_{maxlen}_codes_{codebooks}"
+
+
+def _cache_dir(cache_dir: str | Path | None) -> Path:
+    if cache_dir is not None:
+        return Path(cache_dir).expanduser()
+
+    value = os.environ.get("BPE_CACHE_DIR")
+    if value is None:
+        return static_home() / "bpe"
+    if not value:
+        raise ValueError("BPE_CACHE_DIR must not be empty.")
+    return Path(value).expanduser()

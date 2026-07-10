@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 import torch
-from anydataset import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
+from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
 
 SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -96,6 +96,12 @@ def test_longcat_prepare_parser_uses_batch_size() -> None:
     assert args.batch_size == 8
 
 
+@pytest.mark.parametrize("option", ["--prefetch-factor", "--resume"])
+def test_longcat_prepare_parser_rejects_compat_options(option: str) -> None:
+    with pytest.raises(SystemExit):
+        prepare_wmt19_tts_longcat.parse_args([option, "4"])
+
+
 @pytest.mark.parametrize(
     "option",
     ["--longcat-batch-size", "--longcat-decoder", "--hf-endpoint"],
@@ -180,6 +186,11 @@ def test_translation_filter_parser_defaults_to_clean_usable_cpu() -> None:
     assert args.filter_rule_name == "wmt19_zh_en_translation_quality_rules_v1"
 
 
+def test_translation_filter_parser_rejects_prefetch_factor_alias() -> None:
+    with pytest.raises(SystemExit):
+        filter_wmt19_tts_translation.parse_args(["--prefetch-factor", "4"])
+
+
 def test_translation_filter_factory_builds_translation_predicate() -> None:
     args = filter_wmt19_tts_translation.parse_args([])
 
@@ -197,6 +208,13 @@ def test_speech_translation_filter_parser_defaults_to_translation_first() -> Non
     )
     assert args.translation_labels == ["clean", "usable"]
     assert args.translation_rule_name == "wmt19_zh_en_translation_quality_rules_v1"
+
+
+def test_speech_translation_filter_parser_rejects_prefetch_factor_alias() -> None:
+    with pytest.raises(SystemExit):
+        filter_wmt19_tts_speech_translation.parse_args(
+            ["--translation-prefetch-factor", "4"]
+        )
 
 
 def test_longcat_prepare_uses_wmt19_tts_dataset(
@@ -224,6 +242,7 @@ def test_longcat_prepare_writes_view_materializer_directly(
     calls: dict[str, Any] = {}
     wmt19_tts_calls: list[dict[str, Any]] = []
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
+    monkeypatch.setenv("DYNAMIC_HOME", str(tmp_path / "dynamic"))
 
     class FakeDataset:
         def merge(self, _other: object) -> object:
@@ -239,7 +258,8 @@ def test_longcat_prepare_writes_view_materializer_directly(
             batch_size: int,
             num_workers: int,
             prefetch_factor: int | None,
-            dataset_id: str,
+            write_workers: int,
+            write_prefetch: int | None,
         ) -> None:
             calls["init"] = {
                 "output_dir": output_dir,
@@ -248,7 +268,8 @@ def test_longcat_prepare_writes_view_materializer_directly(
                 "batch_size": batch_size,
                 "num_workers": num_workers,
                 "prefetch_factor": prefetch_factor,
-                "dataset_id": dataset_id,
+                "write_workers": write_workers,
+                "write_prefetch": write_prefetch,
             }
 
         def write(
@@ -257,13 +278,11 @@ def test_longcat_prepare_writes_view_materializer_directly(
             dataset_factory: Any,
             provider_factory: Any,
             devices: str,
-            resume: bool,
         ) -> Path:
             calls["write"] = {
                 "dataset": dataset_factory(),
                 "provider_factory": provider_factory,
                 "devices": devices,
-                "resume": resume,
             }
             return tmp_path / "longcat"
 
@@ -298,9 +317,12 @@ def test_longcat_prepare_writes_view_materializer_directly(
             "3",
             "--num-workers",
             "2",
-            "--prefetch-factor",
+            "--read-prefetch",
             "4",
-            "--resume",
+            "--write-workers",
+            "2",
+            "--write-prefetch",
+            "5",
         ]
     )
     prepare_wmt19_tts_longcat.configure_env(args)
@@ -314,15 +336,21 @@ def test_longcat_prepare_writes_view_materializer_directly(
         "batch_size": 3,
         "num_workers": 2,
         "prefetch_factor": 4,
-        "dataset_id": prepare_wmt19_tts_longcat.WMT19_TTS,
+        "write_workers": 2,
+        "write_prefetch": 5,
     }
     assert calls["write"]["devices"] == "cpu"
-    assert calls["write"]["resume"] is True
     assert isinstance(
         calls["write"]["provider_factory"],
         prepare_wmt19_tts_longcat.LongCatFactory,
     )
-    assert wmt19_tts_calls == [{"split": "dev"}]
+    assert wmt19_tts_calls == [
+        {
+            "dataset_dir": tmp_path,
+            "profile": prepare_wmt19_tts_longcat.WMT19TTSProfile.STORE,
+            "split": "dev",
+        }
+    ]
     assert stage.path == str(tmp_path / "longcat")
     assert stage.sample_count == 1
 

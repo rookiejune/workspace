@@ -1,8 +1,8 @@
 # Workspace Jobs
 
-`env.sh` only locates this repository and fills `PYTHONPATH` when needed. Python
-code owns `LOCATION`, `STATIC_HOME`, `DYNAMIC_HOME` and derived cache variables
-through `zhuyin.env`, so job submission should first enter the intended Python
+`env.sh` locates this repository and prepends the local `PYTHONPATH`.
+Python code resolves `LOCATION`, `STATIC_HOME` and `DYNAMIC_HOME` through
+`zhuyin.env.context()`, so job submission should first enter the intended Python
 environment and then run the wrapper directly.
 
 Common variables:
@@ -11,12 +11,14 @@ Common variables:
 | --- | --- |
 | `WORKSPACE_ROOT` | The `workspace/` project root. |
 | `REPOS_ROOT` | Parent directory containing `workspace/`, `third_party/`, and experiment repos. |
-| `PYTHONPATH` | Adds `workspace/src` and required `third_party` packages when unset. |
+| `PYTHONPATH` | Prepends `workspace/src` and required `third_party` packages. |
 
 Machine presets such as `LOCATION=us`, `LOCATION=hz` and `LOCATION=fudan` are
-resolved by `zhuyin.env` inside Python. If `LOCATION` is unset, Python detects
-the first available marker in this order: `/share5_video`, `/nfs/yin.zhu`,
-`/mnt`. Explicit `STATIC_HOME` or `DYNAMIC_HOME` still override those defaults.
+resolved by `zhuyin.env` inside Python. `with zhuyin.env.context():` temporarily
+sets those workspace variables and unsets values that were absent before entering
+the block. If `LOCATION` is unset, Python detects the first available marker in
+this order: `/share5_video`, `/nfs/yin.zhu`, `/mnt`. Explicit `STATIC_HOME` or
+`DYNAMIC_HOME` still override those defaults.
 
 Common wrappers:
 

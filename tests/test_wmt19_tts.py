@@ -6,16 +6,25 @@ from typing import Any
 
 import pytest
 import torch
-from anydataset import AudioView, Modality, Role, Source, TextMeta, TextView
+from anydataset.types import AudioView, Modality, Role, Source, TextMeta, TextView
 
-from zhuyin.datasets._profiles import WMT19TTSLongCatProfile, WMT19TTSProfile
+from zhuyin import env
 from zhuyin.datasets import wmt19_tts as module
+from zhuyin.datasets._profiles import (
+    WMT19TTSLongCatProfile,
+    WMT19TTSProfile,
+)
 
 
 class BuiltDataset:
     def __init__(self, spec: Any, parse_fn: Any = None) -> None:
         self.spec = spec
         self.parse_fn = parse_fn
+        self.merged: BuiltDataset | None = None
+
+    def merge(self, dataset: BuiltDataset) -> BuiltDataset:
+        self.merged = dataset
+        return self
 
 
 def test_wmt19_tts_uses_explicit_dataset_dir(
@@ -81,39 +90,47 @@ def test_wmt19_tts_explicit_dataset_dir_overrides_current_profile_root(
     assert dataset.spec.split == "dev"
 
 
-def test_wmt19_tts_longcat_uses_longcat_store(
+def test_wmt19_tts_codec_longcat_uses_longcat_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("STATIC_HOME", "/data/static")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts_longcat(dataset_dir="/data/wmt19", split="dev")
+    dataset = module.wmt19_tts_codec(
+        codec=module.Codec.LONGCAT,
+        dataset_dir="/data/wmt19",
+        split="dev",
+    )
 
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/wmt19/longcat"
     assert dataset.spec.split == "dev"
 
 
-def test_wmt19_tts_longcat_explicit_dataset_dir_overrides_current_profile_root(
+def test_wmt19_tts_codec_longcat_explicit_dataset_dir_overrides_current_profile_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCATION", "hz")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts_longcat(dataset_dir="/data/wmt19", split="dev")
+    dataset = module.wmt19_tts_codec(
+        codec=module.Codec.LONGCAT,
+        dataset_dir="/data/wmt19",
+        split="dev",
+    )
 
     assert dataset.spec.source == Source.HF_DISK
     assert dataset.spec.path == "/data/wmt19"
     assert dataset.spec.split == "dev"
 
 
-def test_wmt19_tts_longcat_hz_location_defaults_to_hf_disk(
+def test_wmt19_tts_codec_longcat_hz_location_defaults_to_hf_disk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCATION", "hz")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts_longcat(split="train")
+    dataset = module.wmt19_tts_codec(codec=module.Codec.LONGCAT, split="train")
 
     assert dataset.spec.source == Source.HF_DISK
     assert dataset.spec.path == "/nfs/yin.zhu/datasets/wmt19_tts_longcat_codes_text_cleaned"
@@ -121,17 +138,60 @@ def test_wmt19_tts_longcat_hz_location_defaults_to_hf_disk(
     assert dataset.parse_fn is module._parse_hz_longcat_row
 
 
-def test_wmt19_tts_longcat_explicit_profile_overrides_location(
+def test_wmt19_tts_codec_longcat_explicit_profile_overrides_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCATION", "hz")
     monkeypatch.setenv("STATIC_HOME", "/data/static")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts_longcat(profile=WMT19TTSLongCatProfile.STORE)
+    dataset = module.wmt19_tts_codec(
+        codec=module.Codec.LONGCAT,
+        profile=WMT19TTSLongCatProfile.STORE,
+    )
 
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/static/datasets/wmt19_tts/longcat"
+
+
+def test_wmt19_tts_codec_stable_uses_stable_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STATIC_HOME", "/data/static")
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_codec(codec=module.Codec.STABLE, split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/stable"
+    assert dataset.spec.split == "dev"
+    assert dataset.merged is not None
+    assert dataset.merged.spec.path == "/data/static/datasets/wmt19_tts/base"
+
+
+def test_wmt19_tts_codec_stable_explicit_dataset_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_codec(
+        codec="stable",
+        dataset_dir=tmp_path / "wmt19",
+        split="train",
+    )
+
+    assert dataset.spec.path == str(tmp_path / "wmt19" / "stable")
+    assert dataset.merged is not None
+    assert dataset.merged.spec.path == str(tmp_path / "wmt19" / "base")
+
+
+def test_wmt19_tts_codec_rejects_cross_codec_profile() -> None:
+    with pytest.raises(ValueError, match="does not accept profile"):
+        module.wmt19_tts_codec(
+            codec=module.Codec.STABLE,
+            profile=WMT19TTSLongCatProfile.STORE,
+        )
 
 
 def test_wmt19_tts_rejects_empty_static_home(
@@ -147,13 +207,13 @@ def test_wmt19_tts_defaults_to_fudan_static_home(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("STATIC_HOME", raising=False)
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    with pytest.warns(RuntimeWarning, match="STATIC_HOME"):
+    with pytest.warns(RuntimeWarning), env.context():
         dataset = module.wmt19_tts()
 
     assert dataset.spec.path == "/mnt/pami202/zhuyin/datasets/wmt19_tts/base"
 
 
-def test_wmt19_tts_configures_derived_environment(
+def test_wmt19_tts_does_not_configure_derived_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -171,14 +231,14 @@ def test_wmt19_tts_configures_derived_environment(
 
     module.wmt19_tts()
 
-    assert os.environ["ANYDATASET_HOME"] == str(static_home / "anydataset")
-    assert os.environ["ANYTRAIN_HOME"] == str(static_home)
-    assert os.environ["BPE_CACHE_DIR"] == str(static_home / "bpe")
-    assert os.environ["HF_HOME"] == str(static_home / "huggingface")
-    assert os.environ["HF_HUB_CACHE"] == str(static_home / "huggingface" / "hub")
-    assert os.environ["HF_DATASETS_CACHE"] == str(static_home / "huggingface" / "datasets")
-    assert os.environ["TORCH_HOME"] == str(static_home / "torch")
-    assert os.environ["ANYTRAIN_WHISPER_ROOT"] == str(static_home / "whisper")
+    assert "ANYDATASET_HOME" not in os.environ
+    assert "ANYTRAIN_HOME" not in os.environ
+    assert "BPE_CACHE_DIR" not in os.environ
+    assert "HF_HOME" not in os.environ
+    assert "HF_HUB_CACHE" not in os.environ
+    assert "HF_DATASETS_CACHE" not in os.environ
+    assert "TORCH_HOME" not in os.environ
+    assert "ANYTRAIN_WHISPER_ROOT" not in os.environ
 
 
 def test_parse_hz_tts_row_loads_logical_sample(

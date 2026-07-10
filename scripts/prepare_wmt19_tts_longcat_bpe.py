@@ -1,6 +1,6 @@
 """Train a LongCat semantic BPE tokenizer from the prepared WMT19 TTS store.
 
-The script reads `wmt19_tts_longcat()`, extracts source and target
+The script reads the LongCat `wmt19_tts_codec()` view, extracts source and target
 `semantic_codes`, trains `anytrain.tokenizer.CodecBPE`, and saves the artifact
 under the static workspace BPE cache.
 """
@@ -15,25 +15,25 @@ from dataclasses import asdict
 from functools import partial
 from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from anydataset import AudioView, Modality, Role, Sample
+from anydataset.types import AudioView, Modality, Role, Sample
 
-from zhuyin.datasets.wmt19_tts import wmt19_tts_longcat
-from zhuyin.tokenizers.longcat import (
+from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
+from zhuyin.env import context
+from zhuyin.tokenizers.codec_bpe import (
     DEFAULT_CODEBOOK_SIZES,
     DEFAULT_CODEC_NAME,
     DEFAULT_MAX_TOKEN_LENGTH,
     DEFAULT_MIN_FREQUENCY,
     DEFAULT_VOCAB_SIZE,
-    longcat_bpe_path,
+    codec_bpe_path,
 )
 
 if TYPE_CHECKING:
     from anytrain.tokenizer import CodecBPE
 
 STATE_FILE = "codec_bpe.json"
-TOKENIZER_FILE = "tokenizer.json"
 META_FILE = "meta.json"
 EVAL_FILE = "eval.json"
 
@@ -41,7 +41,8 @@ EVAL_FILE = "eval.json"
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the command line tokenizer preparation entry."""
 
-    summary = run(parse_args(argv))
+    with context():
+        summary = run(parse_args(argv))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
@@ -49,7 +50,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     """Train or reuse the configured WMT19 TTS LongCat BPE artifact."""
 
     codebook_sizes = tuple(args.codebook_sizes)
-    artifact_dir = longcat_bpe_path(
+    artifact_dir = codec_bpe_path(
         cache_dir=args.cache_dir,
         codec_name=args.codec_name,
         vocab_size=args.vocab_size,
@@ -58,16 +59,21 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         codebook_sizes=codebook_sizes,
         sample_limit=args.sample_limit,
     )
-    if artifact_dir.exists() and not args.overwrite:
-        if not (artifact_dir / STATE_FILE).exists():
-            raise FileExistsError(f"BPE artifact directory exists without {STATE_FILE}: {artifact_dir}")
+    if (
+        artifact_dir.exists()
+        and not args.overwrite
+        and not (artifact_dir / STATE_FILE).exists()
+    ):
+        raise FileExistsError(
+            f"BPE artifact directory exists without {STATE_FILE}: {artifact_dir}"
+        )
     if artifact_dir.exists() and args.overwrite:
         shutil.rmtree(artifact_dir)
 
-    dataset_kwargs: dict[str, object] = {"split": args.split}
+    dataset_kwargs: dict[str, object] = {"codec": Codec.LONGCAT, "split": args.split}
     if args.dataset_dir is not None:
         dataset_kwargs["dataset_dir"] = args.dataset_dir
-    dataset = wmt19_tts_longcat(**dataset_kwargs)
+    dataset = wmt19_tts_codec(**dataset_kwargs)
     from anytrain.tokenizer import CodecBPE
 
     if (artifact_dir / STATE_FILE).exists():
@@ -152,16 +158,25 @@ def summarize(
 ) -> dict[str, object]:
     """Evaluate a BPE artifact and return the command output payload."""
 
-    payload = {
-        "actual_vocab_size": bpe.vocab_size,
-        "artifact_dir": str(artifact_dir),
-        "eval": asdict(bpe.eval(corpus(dataset, sample_limit=sample_limit))),
-    }
+    payload = _json_payload(
+        {
+            "actual_vocab_size": bpe.vocab_size,
+            "artifact_dir": str(artifact_dir),
+            "eval": asdict(bpe.eval(corpus(dataset, sample_limit=sample_limit))),
+        }
+    )
     (artifact_dir / EVAL_FILE).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return payload
+
+
+def _json_payload(payload: dict[str, object]) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        json.loads(json.dumps(payload, ensure_ascii=False, sort_keys=True)),
+    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

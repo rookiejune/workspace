@@ -22,24 +22,24 @@ from anydataset.quality.speech import Profile as SpeechQualityProfile
 from anytrain.evaluator.speech import SpeechEvaluator, UTMOSEvaluator, WhisperASREvaluator
 
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
-from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir, whisper_root
+from zhuyin.env import context, datasets_home, static_home
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    configure_env(args)
-    args.reports_dir.mkdir(parents=True, exist_ok=True)
+    with context():
+        configure_env(args)
+        args.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = time.perf_counter()
-    filter_summary = apply_speech_filter(args)
-    summary = {
-        "config": run_config(args),
-        "filter": filter_summary,
-        "seconds": time.perf_counter() - started_at,
-    }
-    write_json(args.reports_dir / "speech_filter_summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        started_at = time.perf_counter()
+        filter_summary = apply_speech_filter(args)
+        summary = {
+            "config": run_config(args),
+            "filter": filter_summary,
+            "seconds": time.perf_counter() - started_at,
+        }
+        write_json(args.reports_dir / "speech_filter_summary.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def apply_speech_filter(args: argparse.Namespace) -> dict[str, Any]:
@@ -51,8 +51,11 @@ def apply_speech_filter(args: argparse.Namespace) -> dict[str, Any]:
         metrics=True,
         device=args.filter_device,
         num_workers=args.num_workers,
+        prefetch_factor=args.read_prefetch,
         commit_samples=args.filter_commit_samples,
         max_shard_samples=args.max_shard_samples,
+        write_workers=args.write_workers,
+        write_prefetch=args.write_prefetch,
     )
     metrics_report = args.reports_dir / "speech_quality_metrics.jsonl"
     write_metrics_jsonl(metrics_report, result.iter_metrics())
@@ -161,13 +164,24 @@ def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    configure_workspace_environment()
     args.root_explicit = args.root is not None
-    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
     args.root = args.root.expanduser().resolve()
     args.reports_dir = args.root / "reports"
-    args.whisper_root = whisper_root()
+    args.whisper_root = _env_path(
+        "ANYTRAIN_WHISPER_ROOT",
+        static_home() / "whisper",
+    )
     os.environ["HF_ENDPOINT"] = args.hf_endpoint
+
+
+def _env_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not value:
+        raise ValueError(f"{name} must not be empty.")
+    return Path(value).expanduser()
 
 
 def run_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -180,6 +194,9 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "whisper_model": args.whisper_model,
         "filter_rule_name": args.filter_rule_name,
         "num_workers": args.num_workers,
+        "read_prefetch": args.read_prefetch,
+        "write_workers": args.write_workers,
+        "write_prefetch": args.write_prefetch,
         "thresholds": {
             "min_utmos": args.min_utmos,
             "max_wer": args.max_wer,
@@ -222,6 +239,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--filter-commit-samples", type=int, default=16)
     parser.add_argument("--preview-metrics", type=int, default=5)
     parser.add_argument("--num-workers", type=int, default=1)
+    parser.add_argument("--read-prefetch", dest="read_prefetch", type=int)
+    parser.add_argument("--write-workers", type=int, default=1)
+    parser.add_argument("--write-prefetch", type=int)
     parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
     return parser.parse_args(argv)
 

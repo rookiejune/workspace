@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from anydataset import AudioItem, AudioView, Modality, Role, Sample, Source, Spec
+from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, Source, Spec
 
 from scripts import prepare_wmt19_tts_longcat_bpe as script
 
@@ -67,11 +67,11 @@ def test_run_writes_bpe_artifact_and_metadata(
     dataset = FakeDataset([sample(source=[1, 2, 1, 2], target=[1, 2])])
     calls: list[dict[str, object]] = []
 
-    def fake_wmt19_tts_longcat(**kwargs: object) -> FakeDataset:
+    def fake_wmt19_tts_codec(**kwargs: object) -> FakeDataset:
         calls.append(kwargs)
         return dataset
 
-    monkeypatch.setattr(script, "wmt19_tts_longcat", fake_wmt19_tts_longcat)
+    monkeypatch.setattr(script, "wmt19_tts_codec", fake_wmt19_tts_codec)
 
     summary = script.run(
         argparse.Namespace(
@@ -92,9 +92,8 @@ def test_run_writes_bpe_artifact_and_metadata(
     artifact_dir = tmp_path / "bpe" / "longcat" / "vocab_100k_minfreq_0_maxlen_none_codes_8192"
     meta = json.loads((artifact_dir / script.META_FILE).read_text(encoding="utf-8"))
 
-    assert calls == [{"split": "train"}]
+    assert calls == [{"codec": script.Codec.LONGCAT, "split": "train"}]
     assert (artifact_dir / script.STATE_FILE).exists()
-    assert (artifact_dir / script.TOKENIZER_FILE).exists()
     assert (artifact_dir / script.EVAL_FILE).exists()
     assert meta["datasets"] == [dataset.spec.to_dict()]
     assert meta["min_frequency"] == 0
@@ -105,14 +104,15 @@ def test_run_writes_bpe_artifact_and_metadata(
     assert "tokenizer" not in summary
     assert "meta" not in summary
     assert "reused" not in summary
-    assert summary["eval"]["encoded_tokens"] == 2
-    assert summary["eval"]["num_sequences"] == 2
-    assert summary["eval"]["original_tokens"] == 6
-    assert summary["eval"]["compression_factor"] == pytest.approx(3.0)
-    assert summary["eval"]["compression_gain"] == pytest.approx(2 / 3)
-    assert summary["eval"]["compression_ratio"] == pytest.approx(1 / 3)
-    assert summary["eval"]["mean_encoded_length"] == pytest.approx(1.0)
-    assert summary["eval"]["mean_original_length"] == pytest.approx(3.0)
+    eval_stats = summary["eval"]
+    assert eval_stats["encoded_tokens"] == 2
+    assert eval_stats["num_sequences"] == 2
+    assert eval_stats["original_frames"] == 6
+    assert eval_stats["compression_factor"] == pytest.approx(3.0)
+    assert eval_stats["compression_gain"] == pytest.approx(2 / 3)
+    assert eval_stats["compression_ratio"] == pytest.approx(1 / 3)
+    assert eval_stats["mean_encoded_length"] == pytest.approx(1.0)
+    assert eval_stats["mean_original_length"] == pytest.approx(3.0)
     assert json.loads((artifact_dir / script.EVAL_FILE).read_text(encoding="utf-8")) == summary
 
 
@@ -121,7 +121,7 @@ def test_run_evaluates_existing_bpe_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dataset = FakeDataset([sample(source=[1, 2, 1, 2], target=[1, 2])])
-    monkeypatch.setattr(script, "wmt19_tts_longcat", lambda **_: dataset)
+    monkeypatch.setattr(script, "wmt19_tts_codec", lambda **_: dataset)
     args = argparse.Namespace(
         dataset_dir=None,
         split="train",

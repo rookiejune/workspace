@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -23,7 +22,7 @@ def test_location_defaults_to_fudan_when_only_mnt_exists(
     _mock_existing_paths(monkeypatch, {"/mnt"})
 
     assert env.location() is env.Location.FUDAN
-    assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
+    assert env.LOCATION_ENV not in os.environ
 
 
 def test_location_defaults_to_hz_when_nfs_exists(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -31,7 +30,7 @@ def test_location_defaults_to_hz_when_nfs_exists(monkeypatch: pytest.MonkeyPatch
     _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu"})
 
     assert env.location() is env.Location.HZ
-    assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
+    assert env.LOCATION_ENV not in os.environ
 
 
 def test_location_defaults_to_us_first(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,7 +38,7 @@ def test_location_defaults_to_us_first(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu", "/share5_video"})
 
     assert env.location() is env.Location.US
-    assert os.environ[env.LOCATION_ENV] == env.Location.US.value
+    assert env.LOCATION_ENV not in os.environ
 
 
 def test_location_uses_fudan_fallback_without_markers(
@@ -49,7 +48,7 @@ def test_location_uses_fudan_fallback_without_markers(
     _mock_existing_paths(monkeypatch, set())
 
     assert env.location() is env.Location.FUDAN
-    assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
+    assert env.LOCATION_ENV not in os.environ
 
 
 def test_location_accepts_hz(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,52 +77,56 @@ def test_location_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None
         env.location()
 
 
-def test_static_home_defaults_to_fudan_with_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_static_home_requires_context_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
 
-    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
-        assert env.static_home() == env.DEFAULT_STATIC_HOME
+    with pytest.raises(RuntimeError, match=env.STATIC_HOME_ENV):
+        env.static_home()
 
-    assert os.environ[env.STATIC_HOME_ENV] == str(env.DEFAULT_STATIC_HOME)
+    assert env.STATIC_HOME_ENV not in os.environ
 
 
-def test_dynamic_home_defaults_to_fudan_with_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dynamic_home_requires_context_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
-    with pytest.warns(RuntimeWarning, match=env.DYNAMIC_HOME_ENV):
-        assert env.dynamic_home() == env.DEFAULT_DYNAMIC_HOME
+    with pytest.raises(RuntimeError, match=env.DYNAMIC_HOME_ENV):
+        env.dynamic_home()
 
-    assert os.environ[env.DYNAMIC_HOME_ENV] == str(env.DEFAULT_DYNAMIC_HOME)
+    assert env.DYNAMIC_HOME_ENV not in os.environ
 
 
-def test_homes_default_to_location_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_context_defaults_to_location_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
     monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
-    with pytest.warns(RuntimeWarning, match=env.Location.HZ.value):
-        assert env.static_home() == env.HZ_HOME
-    with pytest.warns(RuntimeWarning, match=env.Location.HZ.value):
-        assert env.dynamic_home() == Path("/yin.zhu")
+    with pytest.warns(RuntimeWarning, match=env.Location.HZ.value), env.context():
+        assert env.static_home() == env.HzEnv.static_home
+        assert env.dynamic_home() == env.HzEnv.dynamic_home
 
-    assert os.environ[env.STATIC_HOME_ENV] == "/nfs/yin.zhu"
-    assert os.environ[env.DYNAMIC_HOME_ENV] == "/yin.zhu"
+    assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
+    assert env.STATIC_HOME_ENV not in os.environ
+    assert env.DYNAMIC_HOME_ENV not in os.environ
 
 
-def test_homes_default_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_context_defaults_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(env.LOCATION_ENV, env.Location.US.value)
     monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
-    with pytest.warns(RuntimeWarning, match=env.Location.US.value):
-        assert env.static_home() == env.US_STATIC_HOME
-    with pytest.warns(RuntimeWarning, match=env.Location.US.value):
-        assert env.dynamic_home() == env.US_DYNAMIC_HOME
+    with pytest.warns(RuntimeWarning, match=env.Location.US.value), env.context():
+        assert env.static_home() == env.UsEnv.static_home
+        assert env.dynamic_home() == env.UsEnv.dynamic_home
 
-    assert os.environ[env.STATIC_HOME_ENV] == "/zoomai/colddata/video/yin.zhu"
-    assert os.environ[env.DYNAMIC_HOME_ENV] == "/share5_video/users/yin.zhu"
+    assert os.environ[env.LOCATION_ENV] == env.Location.US.value
+    assert env.STATIC_HOME_ENV not in os.environ
+    assert env.DYNAMIC_HOME_ENV not in os.environ
 
 
 def test_explicit_homes_override_location(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -145,124 +148,111 @@ def test_homes_reject_empty_values(monkeypatch: pytest.MonkeyPatch) -> None:
         env.dynamic_home()
 
 
-def test_path_helpers_use_static_and_dynamic_homes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_context_applies_fudan_default_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
+    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, set())
+
+    with pytest.warns(RuntimeWarning), env.context():
+        assert env.location() is env.Location.FUDAN
+        assert env.static_home() == Path("/mnt/pami202/zhuyin")
+        assert env.dynamic_home() == Path("/mnt/pami202/zhuyin/dynamic")
+        assert env.datasets_home() == Path("/mnt/pami202/zhuyin/datasets")
+
+    assert env.LOCATION_ENV not in os.environ
+    assert env.STATIC_HOME_ENV not in os.environ
+    assert env.DYNAMIC_HOME_ENV not in os.environ
+
+
+def test_context_restores_previous_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(env.STATIC_HOME_ENV, "/old/static")
+
+    with env.context(
+        LOCATION=env.Location.US.value,
+        STATIC_HOME="/data/static",
+        DYNAMIC_HOME="/data/dynamic",
+    ):
+        assert env.static_home() == Path("/data/static")
+        assert os.environ[env.LOCATION_ENV] == env.Location.US.value
+        assert os.environ[env.STATIC_HOME_ENV] == "/data/static"
+        assert os.environ[env.DYNAMIC_HOME_ENV] == "/data/dynamic"
+
+    assert os.environ[env.STATIC_HOME_ENV] == "/old/static"
+    assert env.LOCATION_ENV not in os.environ
+    assert env.DYNAMIC_HOME_ENV not in os.environ
+
+
+def test_context_applies_workspace_environment_and_unsets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
     monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
     monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/data/dynamic")
-    monkeypatch.delenv(env.ANYTRAIN_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.BPE_CACHE_DIR_ENV, raising=False)
-    monkeypatch.delenv(env.HF_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.HF_HUB_CACHE_ENV, raising=False)
-    monkeypatch.delenv(env.HF_DATASETS_CACHE_ENV, raising=False)
-    monkeypatch.delenv(env.TORCH_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.WHISPER_ROOT_ENV, raising=False)
 
-    assert env.dataset_dir("common_voice") == Path("/data/static/datasets/common_voice")
-    assert env.train_dir("anycodec") == Path("/data/dynamic/train/anycodec")
-    assert env.models_dir() == Path("/data/static/models")
-    assert env.anytrain_home() == Path("/data/static")
-    assert env.bpe_cache_dir() == Path("/data/static/bpe")
-    assert env.hf_home() == Path("/data/static/huggingface")
-    assert env.hf_hub_cache() == Path("/data/static/huggingface/hub")
-    assert env.hf_datasets_cache() == Path("/data/static/huggingface/datasets")
-    assert env.torch_home() == Path("/data/static/torch")
-    assert env.whisper_root() == Path("/data/static/whisper")
-    assert env.debug_dir() == Path("/data/dynamic/debug")
-    assert env.debug_dir("workspace") == Path("/data/dynamic/debug/workspace")
+    with env.context():
+        assert env.static_home() == Path("/data/static")
+        assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
+        assert os.environ[env.STATIC_HOME_ENV] == "/data/static"
+        assert os.environ[env.DYNAMIC_HOME_ENV] == "/data/dynamic"
+
+    assert os.environ[env.STATIC_HOME_ENV] == "/data/static"
+    assert os.environ[env.DYNAMIC_HOME_ENV] == "/data/dynamic"
 
 
-@pytest.mark.parametrize(
-    ("name", "helper"),
-    [
-        (env.ANYTRAIN_HOME_ENV, env.anytrain_home),
-        (env.BPE_CACHE_DIR_ENV, env.bpe_cache_dir),
-        (env.HF_HOME_ENV, env.hf_home),
-        (env.HF_HUB_CACHE_ENV, env.hf_hub_cache),
-        (env.HF_DATASETS_CACHE_ENV, env.hf_datasets_cache),
-        (env.TORCH_HOME_ENV, env.torch_home),
-        (env.WHISPER_ROOT_ENV, env.whisper_root),
-    ],
-)
-def test_static_cache_helpers_respect_explicit_values(
-    name: str,
-    helper: Callable[[], Path],
+def test_context_none_override_re_resolves_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
-    monkeypatch.setenv(name, "/custom/cache")
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
+    monkeypatch.setenv(env.STATIC_HOME_ENV, "/old/static")
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/old/dynamic")
 
-    assert helper() == Path("/custom/cache")
+    with (
+        pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV),
+        env.context(STATIC_HOME=None, CUSTOM_ENV="value"),
+    ):
+        assert env.static_home() == env.FudanEnv.static_home
+        assert os.environ[env.STATIC_HOME_ENV] == str(env.FudanEnv.static_home)
+        assert os.environ["CUSTOM_ENV"] == "value"
+
+    assert os.environ[env.STATIC_HOME_ENV] == "/old/static"
+    assert os.environ[env.DYNAMIC_HOME_ENV] == "/old/dynamic"
+    assert "CUSTOM_ENV" not in os.environ
 
 
-def test_configure_environment_respects_explicit_values(
+def test_context_applies_non_workspace_overrides() -> None:
+    with env.context(
+        {
+            env.LOCATION_ENV: env.Location.FUDAN.value,
+            env.STATIC_HOME_ENV: "/data/static",
+            env.DYNAMIC_HOME_ENV: "/data/dynamic",
+            "HF_HOME": "/custom/hf",
+            "CUSTOM_ENV": "/custom/value",
+        }
+    ):
+        assert env.static_home() == Path("/data/static")
+        assert env.dynamic_home() == Path("/data/dynamic")
+        assert os.environ["HF_HOME"] == "/custom/hf"
+        assert os.environ["CUSTOM_ENV"] == "/custom/value"
+
+    assert env.STATIC_HOME_ENV not in os.environ
+    assert "HF_HOME" not in os.environ
+    assert "CUSTOM_ENV" not in os.environ
+
+
+def test_context_rejects_empty_non_workspace_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
-    monkeypatch.setenv(env.ANYDATASET_HOME_ENV, "/custom/anydataset")
-    monkeypatch.setenv(env.ANYTRAIN_HOME_ENV, "/custom/anytrain")
-    monkeypatch.setenv(env.BPE_CACHE_DIR_ENV, "/custom/bpe")
-    monkeypatch.setenv(env.HF_HOME_ENV, "/custom/hf")
-    monkeypatch.setenv(env.HF_HUB_CACHE_ENV, "/custom/hub")
-    monkeypatch.setenv(env.HF_DATASETS_CACHE_ENV, "/custom/datasets")
-    monkeypatch.setenv(env.TORCH_HOME_ENV, "/custom/torch")
-    monkeypatch.setenv(env.WHISPER_ROOT_ENV, "/custom/whisper")
+    environ = {
+        env.LOCATION_ENV: env.Location.FUDAN.value,
+        env.STATIC_HOME_ENV: "/data/static",
+        env.DYNAMIC_HOME_ENV: "/data/dynamic",
+        "CUSTOM_ENV": "",
+    }
 
-    env.configure_environment()
-
-    assert os.environ[env.ANYDATASET_HOME_ENV] == "/custom/anydataset"
-    assert os.environ[env.ANYTRAIN_HOME_ENV] == "/custom/anytrain"
-    assert os.environ[env.BPE_CACHE_DIR_ENV] == "/custom/bpe"
-    assert os.environ[env.HF_HOME_ENV] == "/custom/hf"
-    assert os.environ[env.HF_HUB_CACHE_ENV] == "/custom/hub"
-    assert os.environ[env.HF_DATASETS_CACHE_ENV] == "/custom/datasets"
-    assert os.environ[env.TORCH_HOME_ENV] == "/custom/torch"
-    assert os.environ[env.WHISPER_ROOT_ENV] == "/custom/whisper"
-
-
-def test_configure_environment_uses_fudan_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.ANYDATASET_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.ANYTRAIN_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.BPE_CACHE_DIR_ENV, raising=False)
-    monkeypatch.delenv(env.HF_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.HF_HUB_CACHE_ENV, raising=False)
-    monkeypatch.delenv(env.HF_DATASETS_CACHE_ENV, raising=False)
-    monkeypatch.delenv(env.TORCH_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.WHISPER_ROOT_ENV, raising=False)
-
-    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
-        env.configure_environment()
-
-    assert os.environ[env.ANYDATASET_HOME_ENV] == "/mnt/pami202/zhuyin/anydataset"
-    assert os.environ[env.ANYTRAIN_HOME_ENV] == "/mnt/pami202/zhuyin"
-    assert os.environ[env.BPE_CACHE_DIR_ENV] == "/mnt/pami202/zhuyin/bpe"
-    assert os.environ[env.HF_HOME_ENV] == "/mnt/pami202/zhuyin/huggingface"
-    assert os.environ[env.HF_HUB_CACHE_ENV] == "/mnt/pami202/zhuyin/huggingface/hub"
-    assert os.environ[env.HF_DATASETS_CACHE_ENV] == "/mnt/pami202/zhuyin/huggingface/datasets"
-    assert os.environ[env.TORCH_HOME_ENV] == "/mnt/pami202/zhuyin/torch"
-    assert os.environ[env.WHISPER_ROOT_ENV] == "/mnt/pami202/zhuyin/whisper"
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        env.ANYDATASET_HOME_ENV,
-        env.ANYTRAIN_HOME_ENV,
-        env.BPE_CACHE_DIR_ENV,
-        env.HF_HOME_ENV,
-        env.HF_HUB_CACHE_ENV,
-        env.HF_DATASETS_CACHE_ENV,
-        env.TORCH_HOME_ENV,
-        env.WHISPER_ROOT_ENV,
-    ],
-)
-def test_configure_environment_rejects_empty_derived_values(
-    name: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
-    monkeypatch.setenv(name, "")
-
-    with pytest.raises(ValueError, match=name):
-        env.configure_environment()
+    with pytest.raises(ValueError, match="CUSTOM_ENV"), env.context(environ):
+        pass

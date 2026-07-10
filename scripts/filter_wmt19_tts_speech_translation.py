@@ -12,18 +12,19 @@ import json
 import os
 import time
 from collections.abc import Iterable, Mapping, Sequence
-from enum import StrEnum, auto
+from enum import auto
 from itertools import islice
 from pathlib import Path
 from typing import Any, cast
 
 import filter_wmt19_tts_speech as speech_filter
 import filter_wmt19_tts_translation as translation_filter
-from anydataset import FilteredDataset, FilterRule
+from anydataset import FilterRule
+from anydataset.filter import FilteredDataset
 
+from zhuyin._compat import StrEnum
 from zhuyin.datasets.wmt19_tts import WMT19_TTS
-from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir, whisper_root
+from zhuyin.env import context, datasets_home, static_home
 
 
 class Stage(StrEnum):
@@ -33,19 +34,20 @@ class Stage(StrEnum):
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    configure_env(args)
-    args.reports_dir.mkdir(parents=True, exist_ok=True)
+    with context():
+        configure_env(args)
+        args.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = time.perf_counter()
-    stages = apply_filters(args)
-    summary = {
-        "config": run_config(args),
-        "stages": stages,
-        "final": stages[-1],
-        "seconds": time.perf_counter() - started_at,
-    }
-    write_json(args.reports_dir / "summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        started_at = time.perf_counter()
+        stages = apply_filters(args)
+        summary = {
+            "config": run_config(args),
+            "stages": stages,
+            "final": stages[-1],
+            "seconds": time.perf_counter() - started_at,
+        }
+        write_json(args.reports_dir / "summary.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def apply_filters(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -94,9 +96,11 @@ def apply_translation_stage(
         device=args.translation_device,
         batch_size=args.translation_batch_size,
         num_workers=args.translation_num_workers,
-        prefetch_factor=args.translation_prefetch_factor,
+        prefetch_factor=args.translation_read_prefetch,
         commit_samples=args.translation_commit_samples,
         max_shard_samples=args.max_shard_samples,
+        write_workers=args.translation_write_workers,
+        write_prefetch=args.translation_write_prefetch,
     )
 
 
@@ -113,8 +117,11 @@ def apply_speech_stage(
         metrics=True,
         device=args.speech_filter_device,
         num_workers=args.speech_num_workers,
+        prefetch_factor=args.speech_read_prefetch,
         commit_samples=args.speech_commit_samples,
         max_shard_samples=args.max_shard_samples,
+        write_workers=args.speech_write_workers,
+        write_prefetch=args.speech_write_prefetch,
     )
 
 
@@ -179,13 +186,24 @@ def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    configure_workspace_environment()
     args.root_explicit = args.root is not None
-    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
     args.root = args.root.expanduser().resolve()
     args.reports_dir = args.root / "reports" / "speech_translation"
-    args.whisper_root = whisper_root()
+    args.whisper_root = _env_path(
+        "ANYTRAIN_WHISPER_ROOT",
+        static_home() / "whisper",
+    )
     os.environ["HF_ENDPOINT"] = args.hf_endpoint
+
+
+def _env_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not value:
+        raise ValueError(f"{name} must not be empty.")
+    return Path(value).expanduser()
 
 
 def run_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -198,6 +216,11 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
             "rule_name": args.translation_rule_name,
             "device": args.translation_device,
             "selected_labels": list(args.translation_labels),
+            "batch_size": args.translation_batch_size,
+            "num_workers": args.translation_num_workers,
+            "read_prefetch": args.translation_read_prefetch,
+            "write_workers": args.translation_write_workers,
+            "write_prefetch": args.translation_write_prefetch,
             "source_lang": args.source_lang,
             "target_lang": args.target_lang,
             "thresholds": {
@@ -218,6 +241,10 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
             "filter_device": args.speech_filter_device,
             "quality_device": args.quality_device,
             "whisper_model": args.whisper_model,
+            "num_workers": args.speech_num_workers,
+            "read_prefetch": args.speech_read_prefetch,
+            "write_workers": args.speech_write_workers,
+            "write_prefetch": args.speech_write_prefetch,
             "thresholds": {
                 "min_utmos": args.min_utmos,
                 "max_wer": args.max_wer,
@@ -260,7 +287,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--translation-commit-samples", type=int, default=100_000)
     parser.add_argument("--translation-batch-size", type=int, default=1)
     parser.add_argument("--translation-num-workers", type=int, default=0)
-    parser.add_argument("--translation-prefetch-factor", type=int)
+    parser.add_argument(
+        "--translation-read-prefetch",
+        dest="translation_read_prefetch",
+        type=int,
+    )
+    parser.add_argument("--translation-write-workers", type=int, default=1)
+    parser.add_argument("--translation-write-prefetch", type=int)
     parser.add_argument("--min-chars", type=int, default=1)
     parser.add_argument("--review-min-ratio", type=float, default=0.2)
     parser.add_argument("--review-max-ratio", type=float, default=6.0)
@@ -287,6 +320,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--speech-commit-samples", type=int, default=16)
     parser.add_argument("--speech-num-workers", type=int, default=1)
+    parser.add_argument("--speech-read-prefetch", dest="speech_read_prefetch", type=int)
+    parser.add_argument("--speech-write-workers", type=int, default=1)
+    parser.add_argument("--speech-write-prefetch", type=int)
     return parser.parse_args(argv)
 
 

@@ -18,15 +18,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import torch
-from anydataset import (
-    AnyDataset,
+from anydataset import AnyDataset, Preset
+from anydataset.dataset import MapStyleABC
+from anydataset.provider.moss_tts import MossTTSProvider
+from anydataset.store import DatasetWriter, ModalityMaterializer
+from anydataset.store.reader import read_store_manifest
+from anydataset.types import (
     AudioItem,
     AudioView,
-    DatasetWriter,
     Modality,
-    ModalityMaterializer,
-    MapStyleABC,
-    Preset,
     Role,
     Sample,
     Source,
@@ -34,12 +34,9 @@ from anydataset import (
     TextItem,
     TextView,
 )
-from anydataset.provider.moss_tts import MossTTSProvider
-from anydataset.store.reader import read_store_manifest
 from anytrain.tts import TTSOptions
 
-from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir, hf_home
+from zhuyin.env import context, datasets_home, static_home
 
 WMT19_TTS = "wmt19_tts"
 TTS_STORE_DIR = "base"
@@ -57,18 +54,19 @@ class Stage:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    configure_env(args)
-    args.reports_dir.mkdir(parents=True, exist_ok=True)
+    with context():
+        configure_env(args)
+        args.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = time.perf_counter()
-    stage = write_tts_store(args)
-    summary = {
-        "config": run_config(args),
-        "stage": asdict(stage),
-        "seconds": time.perf_counter() - started_at,
-    }
-    write_json(args.reports_dir / "prepare_tts_summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        started_at = time.perf_counter()
+        stage = write_tts_store(args)
+        summary = {
+            "config": run_config(args),
+            "stage": asdict(stage),
+            "seconds": time.perf_counter() - started_at,
+        }
+        write_json(args.reports_dir / "prepare_tts_summary.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def write_tts_store(args: argparse.Namespace) -> Stage:
@@ -107,7 +105,6 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
             dataset_factory=RoleTextStoreFactory(text_store, args.split, Role.SOURCE),
             provider_factory=MossTTSFactory(args, reference_role=None),
             devices=args.devices,
-            resume=True,
         )
 
     if not is_ready_store(target_audio_store):
@@ -126,7 +123,6 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
             ),
             provider_factory=MossTTSFactory(args, reference_role=Role.SOURCE),
             devices=args.devices,
-            resume=True,
         )
 
     source_tts = store_dataset(text_store, args.split).merge(
@@ -360,14 +356,22 @@ def inspect_sample(path: Path, split: str) -> dict[str, Any]:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    configure_workspace_environment()
-    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
     args.root = args.root.expanduser().resolve()
     args.root.mkdir(parents=True, exist_ok=True)
     args.tts_store = args.root / TTS_STORE_DIR
     args.reports_dir = args.root / "reports"
-    args.hf_home = hf_home()
+    args.hf_home = _env_path("HF_HOME", static_home() / "huggingface")
     os.environ["HF_ENDPOINT"] = args.hf_endpoint
+
+
+def _env_path(name: str, default: Path) -> Path:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not value:
+        raise ValueError(f"{name} must not be empty.")
+    return Path(value).expanduser()
 
 
 def run_config(args: argparse.Namespace) -> dict[str, Any]:

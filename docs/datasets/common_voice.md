@@ -17,8 +17,8 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 如果 `root` 指向 `cv-corpus-*` 下面的具体语种目录，语种由目录名推断；否则交给
 anydataset 的 Common Voice preset 从根目录结构推断最新语料版本和默认语种。
 
-调用入口时会根据 `STATIC_HOME` 补齐缺失的派生缓存变量。如果显式设置过派生缓存
-变量，则保留显式值。
+加载入口本身不写入第三方缓存变量。`with zhuyin.env.context():` 只临时注入
+`LOCATION`、`STATIC_HOME` 和 `DYNAMIC_HOME`，具体第三方变量由对应脚本或调用环境显式设置。
 
 ## Workspace API
 

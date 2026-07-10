@@ -21,24 +21,24 @@ from anydataset.quality.translation import Predicate as TranslationQuality
 from anydataset.quality.translation import Profile as TranslationQualityProfile
 
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
-from zhuyin.env import configure_environment as configure_workspace_environment
-from zhuyin.env import dataset_dir
+from zhuyin.env import context, datasets_home
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    configure_env(args)
-    args.reports_dir.mkdir(parents=True, exist_ok=True)
+    with context():
+        configure_env(args)
+        args.reports_dir.mkdir(parents=True, exist_ok=True)
 
-    started_at = time.perf_counter()
-    filter_summary = apply_translation_filter(args)
-    summary = {
-        "config": run_config(args),
-        "filter": filter_summary,
-        "seconds": time.perf_counter() - started_at,
-    }
-    write_json(args.reports_dir / "translation_filter_summary.json", summary)
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+        started_at = time.perf_counter()
+        filter_summary = apply_translation_filter(args)
+        summary = {
+            "config": run_config(args),
+            "filter": filter_summary,
+            "seconds": time.perf_counter() - started_at,
+        }
+        write_json(args.reports_dir / "translation_filter_summary.json", summary)
+        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def apply_translation_filter(args: argparse.Namespace) -> dict[str, Any]:
@@ -51,9 +51,11 @@ def apply_translation_filter(args: argparse.Namespace) -> dict[str, Any]:
         device=args.filter_device,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        prefetch_factor=args.prefetch_factor,
+        prefetch_factor=args.read_prefetch,
         commit_samples=args.filter_commit_samples,
         max_shard_samples=args.max_shard_samples,
+        write_workers=args.write_workers,
+        write_prefetch=args.write_prefetch,
     )
     metrics_report = args.reports_dir / "translation_quality_metrics.jsonl"
     write_metrics_jsonl(metrics_report, result.iter_metrics())
@@ -147,9 +149,8 @@ def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    configure_workspace_environment()
     args.root_explicit = args.root is not None
-    args.root = dataset_dir(WMT19_TTS) if args.root is None else args.root
+    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
     args.root = args.root.expanduser().resolve()
     args.reports_dir = args.root / "reports"
 
@@ -166,7 +167,9 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "selected_labels": list(args.selected_labels),
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
-        "prefetch_factor": args.prefetch_factor,
+        "read_prefetch": args.read_prefetch,
+        "write_workers": args.write_workers,
+        "write_prefetch": args.write_prefetch,
         "thresholds": {
             "min_chars": args.min_chars,
             "review_min_ratio": args.review_min_ratio,
@@ -213,7 +216,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--preview-metrics", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--prefetch-factor", type=int)
+    parser.add_argument("--read-prefetch", dest="read_prefetch", type=int)
+    parser.add_argument("--write-workers", type=int, default=1)
+    parser.add_argument("--write-prefetch", type=int)
     parser.add_argument("--min-chars", type=int, default=1)
     parser.add_argument("--review-min-ratio", type=float, default=0.2)
     parser.add_argument("--review-max-ratio", type=float, default=6.0)

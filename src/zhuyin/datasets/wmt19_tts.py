@@ -1,6 +1,6 @@
-"""Load WMT19 zh-en TTS datasets and LongCat views as logical objects.
+"""Load WMT19 zh-en TTS datasets and codec views as logical objects.
 
-This module exposes WMT19 zh-en TTS and its LongCat-derived view as
+This module exposes WMT19 zh-en TTS and its codec-derived views as
 `anydataset.AnyDataset` objects with a stable logical sample schema. Physical
 storage can vary by workspace profile; callers may still pass one explicit
 dataset directory for a one-off standard store override.
@@ -8,12 +8,13 @@ dataset directory for a one-off standard store override.
 
 from __future__ import annotations
 
+from enum import auto
 from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from anydataset import (
-    AnyDataset,
+from anydataset import AnyDataset
+from anydataset.types import (
     AudioItem,
     AudioView,
     Modality,
@@ -25,8 +26,12 @@ from anydataset import (
     TextView,
 )
 
-from zhuyin.datasets._profiles import WMT19TTSLongCatProfile, WMT19TTSProfile
-from zhuyin.env import configure_environment, dataset_dir
+from zhuyin._compat import StrEnum
+from zhuyin.datasets._profiles import (
+    WMT19TTSLongCatProfile,
+    WMT19TTSProfile,
+)
+from zhuyin.env import datasets_home
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -34,7 +39,15 @@ if TYPE_CHECKING:
 WMT19_TTS = "wmt19_tts"
 _TTS_STORE_DIR = "base"
 _LONGCAT_STORE_DIR = "longcat"
+_STABLE_STORE_DIR = "stable"
 _SHARDED_CSV_SOURCE = "sharded_csv"
+
+
+class Codec(StrEnum):
+    """Codec view selected by `wmt19_tts_codec()`."""
+
+    LONGCAT = auto()
+    STABLE = auto()
 
 
 def wmt19_tts(
@@ -50,10 +63,9 @@ def wmt19_tts(
     unless `dataset_dir` or `profile` is explicit.
     """
 
-    configure_environment()
     resolved = WMT19TTSProfile.resolve(profile)
     if resolved is WMT19TTSProfile.STORE:
-        return _store_dataset(
+        return _store_view(
             store_dir=_TTS_STORE_DIR,
             dataset_dir=dataset_dir,
             split=split,
@@ -67,27 +79,47 @@ def wmt19_tts(
     raise ValueError(f"unsupported WMT19 TTS profile: {resolved.value}")
 
 
-def wmt19_tts_longcat(
+def wmt19_tts_codec(
+    *,
+    codec: Codec | str = Codec.LONGCAT,
+    dataset_dir: str | PathLike[str] | None = None,
+    profile: WMT19TTSLongCatProfile | str | None = None,
+    split: str = "train",
+) -> AnyDataset:
+    """Return one codec view over the logical WMT19 zh-en TTS dataset."""
+
+    resolved = Codec(codec)
+    if resolved is Codec.LONGCAT:
+        return _longcat_dataset(
+            dataset_dir=dataset_dir,
+            profile=profile,
+            split=split,
+        )
+    if resolved is Codec.STABLE:
+        if profile is not None:
+            raise ValueError(f"codec={resolved.value} does not accept profile.")
+        return _store_view(
+            store_dir=_STABLE_STORE_DIR,
+            dataset_dir=dataset_dir,
+            split=split,
+            merge_base=True,
+        )
+    raise ValueError(f"unsupported WMT19 TTS codec: {resolved.value}")
+
+
+def _longcat_dataset(
     *,
     dataset_dir: str | PathLike[str] | None = None,
     profile: WMT19TTSLongCatProfile | str | None = None,
     split: str = "train",
 ) -> AnyDataset:
-    """Return the logical WMT19 zh-en TTS LongCat view dataset.
-
-    It contains source and target audio items with `AudioView.LONGCAT` views,
-    each including `semantic_codes` and `acoustic_codes`. The default physical
-    profile is selected by `LOCATION` unless `dataset_dir` or `profile` is
-    explicit.
-    """
-
-    configure_environment()
     resolved = WMT19TTSLongCatProfile.resolve(profile)
     if resolved is WMT19TTSLongCatProfile.STORE:
-        return _store_dataset(
+        return _store_view(
             store_dir=_LONGCAT_STORE_DIR,
             dataset_dir=dataset_dir,
             split=split,
+            merge_base=True,
         )
     if resolved is WMT19TTSLongCatProfile.HZ_HF_DISK_CODES:
         root = _explicit_or_profile_root(dataset_dir, resolved.default_root)
@@ -98,6 +130,25 @@ def wmt19_tts_longcat(
     raise ValueError(f"unsupported WMT19 TTS LongCat profile: {resolved.value}")
 
 
+def _store_view(
+    *,
+    store_dir: str,
+    dataset_dir: str | PathLike[str] | None = None,
+    split: str = "train",
+    merge_base: bool = False,
+) -> AnyDataset:
+    view = _store_dataset(store_dir=store_dir, dataset_dir=dataset_dir, split=split)
+    if not merge_base:
+        return view
+    return view.merge(
+        _store_dataset(
+            store_dir=_TTS_STORE_DIR,
+            dataset_dir=dataset_dir,
+            split=split,
+        )
+    )
+
+
 def _store_dataset(
     *,
     store_dir: str,
@@ -105,41 +156,15 @@ def _store_dataset(
     split: str = "train",
 ) -> AnyDataset:
     root = _dataset_root(dataset_dir)
-    return AnyDataset(_dataset_spec(store_dir=store_dir, dataset_dir=root, split=split))
-
-
-def _dataset_spec(
-    *,
-    store_dir: str,
-    dataset_dir: str | PathLike[str] | None = None,
-    split: str = "train",
-) -> Spec:
-    """Return the anydataset store spec for the current WMT19 TTS dataset."""
-
-    return Spec(
-        source=Source.STORE,
-        path=str(_store_path(store_dir=store_dir, dataset_dir=dataset_dir)),
-        split=split,
+    return AnyDataset(
+        Spec(source=Source.STORE, path=str(root / store_dir), split=split),
     )
 
 
-def _store_path(
-    *,
-    store_dir: str,
-    dataset_dir: str | PathLike[str] | None = None,
-) -> Path:
-    """Return the store directory inside the WMT19 TTS dataset root."""
-
-    return _dataset_root(dataset_dir) / store_dir
-
-
 def _dataset_root(value: str | PathLike[str] | None = None) -> Path:
-    """Resolve the WMT19 TTS dataset root."""
-
     if value is not None:
         return Path(value).expanduser()
-
-    return dataset_dir(WMT19_TTS)
+    return datasets_home() / WMT19_TTS
 
 
 def _explicit_or_profile_root(

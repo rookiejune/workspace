@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-
 _WORKSPACE_ENV_NAMES = (
     "LOCATION",
     "STATIC_HOME",

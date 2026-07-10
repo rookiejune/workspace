@@ -1,8 +1,7 @@
 # WMT19 TTS
 
 `wmt19_tts()` 返回逻辑 WMT19 zh-en TTS 对象，source/target 两侧包含文本和
-waveform。`wmt19_tts_longcat()` 返回同一逻辑数据集的 LongCat 视图，供
-speech-to-speech 读取原始 LongCat codes。
+waveform。`wmt19_tts_codec()` 返回同一数据集的 codec 视图。
 
 入口会根据 `LOCATION` 选择默认物理 profile，但返回的逻辑 sample 契约保持一致。
 显式传 `dataset_dir=...` 时只覆盖当前 profile 的物理 root；需要强制读取标准 store
@@ -23,7 +22,7 @@ from zhuyin.datasets.wmt19_tts import wmt19_tts
 dataset = wmt19_tts()
 ```
 
-默认 LongCat 训练入口：
+默认 LongCat codec 视图：
 
 ```text
 LOCATION=fudan  store://$STATIC_HOME/datasets/wmt19_tts/longcat:train
@@ -33,9 +32,10 @@ LOCATION=hz     hf-disk:///nfs/yin.zhu/datasets/wmt19_tts_longcat_codes_text_cle
 对应 workspace 入口：
 
 ```python
-from zhuyin.datasets.wmt19_tts import wmt19_tts_longcat
+from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
 
-dataset = wmt19_tts_longcat()
+longcat = wmt19_tts_codec()
+stable = wmt19_tts_codec(codec=Codec.STABLE)
 ```
 
 交互式检查入口：
@@ -50,9 +50,9 @@ LongCat decoder 还原 source/target 波形供试听。
 
 如果 `STATIC_HOME` 未设置，入口会使用 `LOCATION` 对应默认值并发 warning；
 `LOCATION` 缺失时会按 `/share5_video`、`/nfs/yin.zhu`、`/mnt` 的顺序探测默认位置。
-调用入口时会根据 `STATIC_HOME` 或该默认值补齐缺失的 `ANYDATASET_HOME`、
-`ANYTRAIN_HOME`、`BPE_CACHE_DIR`、`HF_HOME`、`HF_HUB_CACHE`、`HF_DATASETS_CACHE`、
-`TORCH_HOME` 和 `ANYTRAIN_WHISPER_ROOT`。
+加载入口本身不写入第三方缓存变量。`with zhuyin.env.context():` 只临时注入
+`LOCATION`、`STATIC_HOME` 和 `DYNAMIC_HOME`；`HF_HOME`、`BPE_CACHE_DIR` 或
+`ANYTRAIN_WHISPER_ROOT` 这类变量由具体脚本按需读取或由调用环境显式设置。
 临时使用其他物理根目录时，传 `dataset_dir=...`；需要强制选择物理加载方案时，
 传 `profile=...`。
 
@@ -93,7 +93,8 @@ jobs/prepare_wmt19_tts.sh \
 
 ## 准备 LongCat
 
-LongCat 编码脚本消费 `base`，写出供 `wmt19_tts_longcat()` 读取的 `longcat` store：
+LongCat 编码脚本消费 `base`，写出供 `wmt19_tts_codec(codec=Codec.LONGCAT)` 读取的
+`longcat` store：
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
@@ -181,13 +182,12 @@ python scripts/prepare_wmt19_tts_longcat_bpe.py
 jobs/prepare_wmt19_tts_longcat_bpe.sh
 ```
 
-脚本默认从 `wmt19_tts_longcat(split="train")` 读取 source 和 target 两侧完整
+脚本默认从 `wmt19_tts_codec(codec=Codec.LONGCAT, split="train")` 读取 source 和 target 两侧完整
 `semantic_codes`，训练 `anytrain.tokenizer.CodecBPE` 的 100k vocab。训练参数中
 `vocab_size`、`min_frequency`、`show_progress` 和
 `max_token_length` 对齐 `tokenizers.trainers.BpeTrainer`。输出根目录优先使用
-`$BPE_CACHE_DIR`；未设置时由 workspace 配到
-`$STATIC_HOME/bpe`，并写出
-`longcat/vocab_100k_minfreq_0_maxlen_none_codes_8192/{codec_bpe.json,tokenizer.json,meta.json,eval.json}`。
+`$BPE_CACHE_DIR`；未设置时写到 `$STATIC_HOME/bpe`，并写出
+`longcat/vocab_100k_minfreq_0_maxlen_none_codes_8192/{codec_bpe.json,meta.json,eval.json}`。
 其中 `vocab_100k` 是目标 BPE vocab size，`codes_8192` 是 LongCat semantic codebook
 大小。命令输出只保留 `artifact_dir`、`actual_vocab_size` 和 `eval` 压缩统计。
 
@@ -201,8 +201,8 @@ python scripts/prepare_wmt19_tts_longcat_bpe.py --sample-limit 1000
 代码里通过 workspace 入口拿路径或 tokenizer：
 
 ```python
-from zhuyin.tokenizers.longcat import longcat_bpe, longcat_bpe_path
+from zhuyin.tokenizers.codec_bpe import codec_bpe, codec_bpe_path
 
-path = longcat_bpe_path()
-bpe = longcat_bpe()
+path = codec_bpe_path()
+bpe = codec_bpe()
 ```
