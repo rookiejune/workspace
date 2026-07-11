@@ -124,7 +124,13 @@ def test_filter_uses_wmt19_tts_dataset(tmp_path: Path, monkeypatch: pytest.Monke
     factory = filter_wmt19_tts_speech.StoreFactory(root, split)
 
     assert factory() == []
-    assert calls == [{"dataset_dir": root, "split": split}]
+    assert calls == [
+        {
+            "dataset_dir": root,
+            "profile": filter_wmt19_tts_speech.WMT19TTSProfile.STORE,
+            "split": split,
+        }
+    ]
 
 
 def test_filter_default_factory_uses_default_wmt19_tts_dataset(
@@ -159,7 +165,13 @@ def test_translation_filter_uses_wmt19_tts_dataset(
     factory = filter_wmt19_tts_translation.StoreFactory(root, split)
 
     assert factory() == []
-    assert calls == [{"dataset_dir": root, "split": split}]
+    assert calls == [
+        {
+            "dataset_dir": root,
+            "profile": filter_wmt19_tts_translation.WMT19TTSProfile.STORE,
+            "split": split,
+        }
+    ]
 
 
 def test_translation_filter_default_factory_uses_default_wmt19_tts_dataset(
@@ -370,3 +382,12 @@ def test_longcat_factory_uses_default_provider_options(
 
     assert isinstance(provider, FakeProvider)
     assert calls == [{"device": None}]
+
+
+def test_prepare_is_ready_store_exposes_broken_ready_store(tmp_path: Path) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    (store / ".ready").write_text("ready\n", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        prepare_wmt19_tts.is_ready_store(store)

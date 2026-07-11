@@ -285,10 +285,9 @@ def store_dataset(path: Path, split: str) -> AnyDataset:
 def is_ready_store(path: Path) -> bool:
     if not path.exists():
         return False
-    try:
-        read_store_manifest(path)
-    except Exception:
+    if not (path / ".ready").exists():
         return False
+    read_store_manifest(path)
     return True
 
 

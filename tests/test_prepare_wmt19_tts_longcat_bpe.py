@@ -143,6 +143,46 @@ def test_run_evaluates_existing_bpe_artifact(
     assert "reused" not in second
 
 
+def test_run_forces_store_profile_for_explicit_dataset_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset = FakeDataset([sample(source=[1, 2, 1, 2], target=[1, 2])])
+    calls: list[dict[str, object]] = []
+
+    def fake_wmt19_tts_codec(**kwargs: object) -> FakeDataset:
+        calls.append(kwargs)
+        return dataset
+
+    monkeypatch.setattr(script, "wmt19_tts_codec", fake_wmt19_tts_codec)
+    dataset_dir = tmp_path / "wmt19_tts"
+
+    script.run(
+        argparse.Namespace(
+            dataset_dir=dataset_dir,
+            split="train",
+            cache_dir=tmp_path / "bpe",
+            codec_name="longcat",
+            vocab_size=100_000,
+            min_frequency=0,
+            max_token_length=None,
+            codebook_sizes=[8192],
+            sample_limit=None,
+            overwrite=False,
+            show_progress=False,
+        )
+    )
+
+    assert calls == [
+        {
+            "codec": script.Codec.LONGCAT,
+            "dataset_dir": dataset_dir,
+            "profile": script.WMT19TTSLongCatProfile.STORE,
+            "split": "train",
+        }
+    ]
+
+
 def sample(*, source: Sequence[int], target: Sequence[int]) -> Sample:
     return {
         (Role.SOURCE, Modality.AUDIO): AudioItem(

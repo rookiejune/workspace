@@ -20,6 +20,7 @@ from anydataset import AnyDataset, FilterRule
 from anydataset.quality.translation import Predicate as TranslationQuality
 from anydataset.quality.translation import Profile as TranslationQualityProfile
 
+from zhuyin.datasets._profiles import WMT19TTSProfile
 from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
 from zhuyin.env import context, datasets_home
 
@@ -80,7 +81,11 @@ class StoreFactory:
     def __call__(self) -> AnyDataset:
         if self.path is None:
             return wmt19_tts(split=self.split)
-        return wmt19_tts(dataset_dir=self.path, split=self.split)
+        return wmt19_tts(
+            dataset_dir=self.path,
+            profile=WMT19TTSProfile.STORE,
+            split=self.split,
+        )
 
 
 @dataclass(frozen=True)

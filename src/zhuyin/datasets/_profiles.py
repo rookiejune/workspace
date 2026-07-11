@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import auto
 from pathlib import Path
-from typing import Self
+from typing import TypeVar
 
 from .._compat import StrEnum
 from ..env import HzEnv, Location, location
@@ -20,17 +20,18 @@ HZ_WMT19_TTS_EXPORT_ROOT = (
 HZ_WMT19_TTS_LONGCAT_ROOT = (
     HzEnv.static_home / "datasets" / "wmt19_tts_longcat_codes_text_cleaned"
 )
+ProfileT = TypeVar("ProfileT", bound="_Profile")
 
 
 class _Profile(StrEnum):
     @classmethod
-    def resolve(cls, value: Self | str | None) -> Self:
+    def resolve(cls: type[ProfileT], value: ProfileT | str | None) -> ProfileT:
         if value is not None:
             return cls(value)
         return cls.default()
 
     @classmethod
-    def default(cls) -> Self:
+    def default(cls: type[ProfileT]) -> ProfileT:
         raise NotImplementedError
 
 
@@ -41,7 +42,7 @@ class WMT19TTSProfile(_Profile):
     HZ_EXPORT = auto()
 
     @classmethod
-    def default(cls) -> Self:
+    def default(cls) -> WMT19TTSProfile:
         if location() is Location.HZ:
             return cls.HZ_EXPORT
         return cls.STORE
@@ -60,7 +61,7 @@ class WMT19TTSLongCatProfile(_Profile):
     HZ_HF_DISK_CODES = auto()
 
     @classmethod
-    def default(cls) -> Self:
+    def default(cls) -> WMT19TTSLongCatProfile:
         if location() is Location.HZ:
             return cls.HZ_HF_DISK_CODES
         return cls.STORE

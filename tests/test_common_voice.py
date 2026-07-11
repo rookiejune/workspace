@@ -105,7 +105,7 @@ def test_common_voice_sample_contains_speaker_label(
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
     monkeypatch.setenv("DYNAMIC_HOME", str(tmp_path / "dynamic"))
 
-    with context():
+    with context(ANYDATASET_HOME=tmp_path / "anydataset"):
         sample = next(iter(common_voice(root=tmp_path)))
 
     assert "ANYDATASET_HOME" not in os.environ

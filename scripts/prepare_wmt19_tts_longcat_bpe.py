@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, cast
 
 from anydataset.types import AudioView, Modality, Role, Sample
 
+from zhuyin.datasets._profiles import WMT19TTSLongCatProfile
 from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
 from zhuyin.env import context
 from zhuyin.tokenizers.codec_bpe import (
@@ -73,6 +74,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     dataset_kwargs: dict[str, object] = {"codec": Codec.LONGCAT, "split": args.split}
     if args.dataset_dir is not None:
         dataset_kwargs["dataset_dir"] = args.dataset_dir
+        dataset_kwargs["profile"] = WMT19TTSLongCatProfile.STORE
     dataset = wmt19_tts_codec(**dataset_kwargs)
     from anytrain.tokenizer import CodecBPE
 
