@@ -43,3 +43,40 @@ src/zhuyin/datasets/
 
 加载入口仍保留在 `zhuyin.datasets.wmt19_tts`，不把 prepare/filter/BPE 作为公开 dataset
 loader 导出。需要复用私有处理逻辑时从 `_wmt19_tts_*` 模块调用。
+
+## Public Contracts
+
+公开入口按对象职责分层：
+
+- `zhuyin.env` 只负责解析当前机器 profile、`STATIC_HOME`、`DYNAMIC_HOME` 和临时环境变量注入。
+- `zhuyin.datasets.*` 负责把物理数据源包装成稳定逻辑数据集。
+- `zhuyin.tokenizers.*` 负责定位和加载已经准备好的 tokenizer artifact。
+
+调用方不应依赖 `workspace` 内部目录名、临时文件名、脚本中间产物或第三方库的隐式副作用。
+新增公开入口时，应同步补充对应模块文档，说明输入、返回对象、默认路径和失败边界。
+
+### Environment Contract
+
+`zhuyin.env.context()` 是进入 workspace 路径环境的标准边界。它会根据当前环境和显式
+override 解析：
+
+```text
+LOCATION
+STATIC_HOME
+DYNAMIC_HOME
+```
+
+解析顺序：
+
+1. 显式传入 `context(LOCATION=..., STATIC_HOME=..., DYNAMIC_HOME=...)`。
+2. 当前进程已有环境变量。
+3. `LOCATION` 对应的默认 profile 路径；使用默认路径时发 `RuntimeWarning`。
+
+`static_home()`、`dynamic_home()` 和 `datasets_home()` 只读取当前进程环境。调用这些函数前，
+调用方必须已经设置对应环境变量，或处在 `with zhuyin.env.context():` 中。这样可以避免在
+普通函数调用里悄悄修改进程环境。
+
+常规数据集入口应在内部使用 `zhuyin.env.context()` 解析默认路径；脚本、job 和 notebook
+可以显式包一层 context 来固定本次运行的机器 profile。第三方缓存变量，例如 `HF_HOME`、
+`BPE_CACHE_DIR` 和模型专用 checkpoint root，不属于 `zhuyin.env` 的自动注入范围，由具体
+脚本或 job 按需设置。
