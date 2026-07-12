@@ -1,9 +1,12 @@
 """Load WMT19 zh-en TTS datasets and codec views as logical objects.
 
 This module exposes WMT19 zh-en TTS and its codec-derived views as
-`anydataset.AnyDataset` objects with a stable logical sample schema. Physical
-storage can vary by workspace profile; callers may still pass one explicit
-dataset directory for a one-off standard store override.
+`anydataset.AnyDataset` objects with a stable logical sample schema.
+
+Passing `root=...` always reads a prepared standard store. Without an explicit
+root, physical loading follows the current location and requested logical view:
+HZ uses its private TTS and LongCat exports, while other views use the standard
+store under `datasets_home()`.
 """
 
 from __future__ import annotations
@@ -27,153 +30,137 @@ from anydataset.types import (
 )
 
 from zhuyin._compat import StrEnum
-from zhuyin.datasets._profiles import (
-    WMT19TTSLongCatProfile,
-    WMT19TTSProfile,
-)
-from zhuyin.env import datasets_home
+from zhuyin.env import Location, datasets_home, location
 
 if TYPE_CHECKING:
     from torch import Tensor
 
 WMT19_TTS = "wmt19_tts"
 _TTS_STORE_DIR = "base"
-_LONGCAT_STORE_DIR = "longcat"
-_STABLE_STORE_DIR = "stable"
 _SHARDED_CSV_SOURCE = "sharded_csv"
+_HZ_TTS_ROOT = Location.HZ.static_home / "train" / "text_to_speech" / "moss_tts_hz_export"
+_HZ_LONGCAT_ROOT = (
+    Location.HZ.static_home / "datasets" / "wmt19_tts_longcat_codes_text_cleaned"
+)
 
 
 class Codec(StrEnum):
-    """Codec view selected by `wmt19_tts_codec()`."""
+    """Codec view selected by `wmt19_tts_codec()`; values match store dirs."""
 
     LONGCAT = auto()
     STABLE = auto()
+    UNICODEC = auto()
 
 
 def wmt19_tts(
     *,
-    dataset_dir: str | PathLike[str] | None = None,
-    profile: WMT19TTSProfile | str | None = None,
+    root: str | PathLike[str] | None = None,
     split: str = "train",
 ) -> AnyDataset:
     """Return the logical WMT19 zh-en TTS dataset.
 
     The returned object contains source and target text items plus audio
-    waveform views. The default physical profile is selected by `LOCATION`
-    unless `dataset_dir` or `profile` is explicit.
+    waveform views.
     """
 
-    resolved = WMT19TTSProfile.resolve(profile)
-    if resolved is WMT19TTSProfile.STORE:
-        return _store_view(
-            store_dir=_TTS_STORE_DIR,
-            dataset_dir=dataset_dir,
+    if root is not None or location() is not Location.HZ:
+        return _store_view(store_dir=_TTS_STORE_DIR, root=root, split=split)
+    return AnyDataset(
+        Spec(
+            source=_SHARDED_CSV_SOURCE,
+            path=str(_HZ_TTS_ROOT),
             split=split,
-        )
-    if resolved is WMT19TTSProfile.HZ_EXPORT:
-        root = _explicit_or_profile_root(dataset_dir, resolved.default_root)
-        return AnyDataset(
-            Spec(source=_SHARDED_CSV_SOURCE, path=str(root), split=split),
-            parse_fn=_parse_hz_tts_row,
-        )
-    raise ValueError(f"unsupported WMT19 TTS profile: {resolved.value}")
+        ),
+        parse_fn=_parse_hz_tts_row,
+    )
 
 
 def wmt19_tts_codec(
     *,
     codec: Codec | str = Codec.LONGCAT,
-    dataset_dir: str | PathLike[str] | None = None,
-    profile: WMT19TTSLongCatProfile | str | None = None,
+    root: str | PathLike[str] | None = None,
     split: str = "train",
 ) -> AnyDataset:
     """Return one codec view over the logical WMT19 zh-en TTS dataset."""
 
-    resolved = Codec(codec)
-    if resolved is Codec.LONGCAT:
-        return _longcat_dataset(
-            dataset_dir=dataset_dir,
-            profile=profile,
-            split=split,
-        )
-    if resolved is Codec.STABLE:
-        if profile is not None:
-            raise ValueError(f"codec={resolved.value} does not accept profile.")
+    resolved_codec = Codec(codec)
+    if root is not None or resolved_codec is not Codec.LONGCAT or location() is not Location.HZ:
         return _store_view(
-            store_dir=_STABLE_STORE_DIR,
-            dataset_dir=dataset_dir,
+            store_dir=resolved_codec.value,
+            root=root,
             split=split,
-            merge_base=True,
+            merge_base=resolved_codec is Codec.LONGCAT,
+            transforms=_longcat_transforms()
+            if resolved_codec is Codec.LONGCAT
+            else None,
         )
-    raise ValueError(f"unsupported WMT19 TTS codec: {resolved.value}")
+    return AnyDataset(
+        Spec(source=Source.HF_DISK, path=str(_HZ_LONGCAT_ROOT), split=split),
+        parse_fn=_parse_hz_longcat_row,
+    )
 
 
-def _longcat_dataset(
+def wmt19_tts_stable(
     *,
-    dataset_dir: str | PathLike[str] | None = None,
-    profile: WMT19TTSLongCatProfile | str | None = None,
+    root: str | PathLike[str] | None = None,
     split: str = "train",
 ) -> AnyDataset:
-    resolved = WMT19TTSLongCatProfile.resolve(profile)
-    if resolved is WMT19TTSLongCatProfile.STORE:
-        return _store_view(
-            store_dir=_LONGCAT_STORE_DIR,
-            dataset_dir=dataset_dir,
-            split=split,
-            merge_base=True,
-        )
-    if resolved is WMT19TTSLongCatProfile.HZ_HF_DISK_CODES:
-        root = _explicit_or_profile_root(dataset_dir, resolved.default_root)
-        return AnyDataset(
-            Spec(source=Source.HF_DISK, path=str(root), split=split),
-            parse_fn=_parse_hz_longcat_row,
-        )
-    raise ValueError(f"unsupported WMT19 TTS LongCat profile: {resolved.value}")
+    """Return the Stable Codec view of WMT19 zh-en TTS."""
+
+    return wmt19_tts_codec(codec=Codec.STABLE, root=root, split=split)
+
+
+def wmt19_tts_unicodec(
+    *,
+    root: str | PathLike[str] | None = None,
+    split: str = "train",
+) -> AnyDataset:
+    """Return the UniCodec view of WMT19 zh-en TTS."""
+
+    return wmt19_tts_codec(codec=Codec.UNICODEC, root=root, split=split)
 
 
 def _store_view(
     *,
     store_dir: str,
-    dataset_dir: str | PathLike[str] | None = None,
+    root: str | PathLike[str] | None = None,
     split: str = "train",
     merge_base: bool = False,
+    transforms=None,
 ) -> AnyDataset:
-    view = _store_dataset(store_dir=store_dir, dataset_dir=dataset_dir, split=split)
+    view = _store_dataset(
+        store_dir=store_dir,
+        root=root,
+        split=split,
+        transforms=transforms,
+    )
     if not merge_base:
         return view
     return view.merge(
-        _store_dataset(
-            store_dir=_TTS_STORE_DIR,
-            dataset_dir=dataset_dir,
-            split=split,
-        )
+        _store_dataset(store_dir=_TTS_STORE_DIR, root=root, split=split)
     )
 
 
 def _store_dataset(
     *,
     store_dir: str,
-    dataset_dir: str | PathLike[str] | None = None,
+    root: str | PathLike[str] | None = None,
     split: str = "train",
+    transforms=None,
 ) -> AnyDataset:
-    root = _dataset_root(dataset_dir)
+    resolved = dataset_root(root)
     return AnyDataset(
-        Spec(source=Source.STORE, path=str(root / store_dir), split=split),
+        Spec(source=Source.STORE, path=str(resolved / store_dir), split=split),
+        transforms=transforms,
     )
 
 
-def _dataset_root(value: str | PathLike[str] | None = None) -> Path:
-    if value is not None:
-        return Path(value).expanduser()
+def dataset_root(root: str | PathLike[str] | None = None) -> Path:
+    """Resolve the standard WMT19 TTS store root."""
+
+    if root is not None:
+        return Path(root).expanduser()
     return datasets_home() / WMT19_TTS
-
-
-def _explicit_or_profile_root(
-    value: str | PathLike[str] | None,
-    default: Path,
-) -> Path:
-    if value is not None:
-        return Path(value).expanduser()
-    return default
 
 
 def _parse_hz_tts_row(row: dict[str, str]) -> dict[tuple[Role, Modality], Any]:
@@ -220,18 +207,13 @@ def _parse_hz_longcat_side(
     prefix: str,
 ) -> dict[tuple[Role, Modality], Any]:
     try:
-        semantic_codes, acoustic_codes = _aligned_longcat_codes(
+        codes = _longcat_codes(
             semantic_codes=_tensor(row[f"{prefix}_semantic_codes"]),
             acoustic_codes=_tensor(row[f"{prefix}_acoustic_codes"]),
         )
         return {
             (role, Modality.AUDIO): AudioItem(
-                views={
-                    AudioView.LONGCAT: {
-                        "semantic_codes": semantic_codes,
-                        "acoustic_codes": acoustic_codes,
-                    },
-                },
+                views={AudioView.LONGCAT: codes},
             ),
             (role, Modality.TEXT): TextItem(
                 views={TextView.TEXT: row[f"{prefix}_text"]},
@@ -242,13 +224,46 @@ def _parse_hz_longcat_side(
         raise ValueError(f"invalid HZ WMT19 TTS LongCat row: {row}") from e
 
 
-def _aligned_longcat_codes(
+def _longcat_transforms():
+    return {
+        (role, Modality.AUDIO): _longcat_item
+        for role in (Role.SOURCE, Role.TARGET)
+    }
+
+
+def _longcat_item(item: AudioItem) -> AudioItem:
+    value = item.views[AudioView.LONGCAT]
+    if not isinstance(value, dict):
+        raise TypeError("stored LongCat view must contain semantic and acoustic codes.")
+    codes = _longcat_codes(
+        semantic_codes=_tensor(value["semantic_codes"]),
+        acoustic_codes=_tensor(value["acoustic_codes"]),
+    )
+    return AudioItem(
+        views={**item.views, AudioView.LONGCAT: codes},
+        meta=item.meta,
+    )
+
+
+def _longcat_codes(
     *,
     semantic_codes: Tensor,
     acoustic_codes: Tensor,
-) -> tuple[Tensor, Tensor]:
+) -> Tensor:
+    import torch
+
+    if semantic_codes.ndim != 1:
+        raise ValueError("LongCat semantic codes must have shape [frame].")
+    if acoustic_codes.ndim != 2:
+        raise ValueError("LongCat acoustic codes must have shape [codebook, frame].")
     length = min(semantic_codes.shape[-1], acoustic_codes.shape[-1])
-    return semantic_codes[..., :length], acoustic_codes[..., :length]
+    return torch.cat(
+        (
+            semantic_codes[:length].unsqueeze(0),
+            acoustic_codes[:, :length],
+        ),
+        dim=0,
+    ).transpose(0, 1).contiguous()
 
 
 def _load_audio(path: str) -> Any:

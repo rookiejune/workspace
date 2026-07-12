@@ -81,10 +81,14 @@ def test_dataset_root_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_dataset_root_defaults_to_fudan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LOCATION", raising=False)
     monkeypatch.delenv("STATIC_HOME", raising=False)
+    monkeypatch.setattr(Path, "exists", lambda _path: False)
 
-    with pytest.warns(RuntimeWarning), context():
+    with pytest.warns(RuntimeWarning, match="STATIC_HOME"):
         assert dataset_root() == Path("/mnt/pami202/zhuyin/datasets/common_voice")
+
+    assert "STATIC_HOME" not in os.environ
 
 
 def test_common_voice_sample_contains_speaker_label(

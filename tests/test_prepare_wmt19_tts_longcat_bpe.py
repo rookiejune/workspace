@@ -6,27 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+import torch
 from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, Source, Spec
 
 from scripts import prepare_wmt19_tts_longcat_bpe as script
-
-
-class Codes:
-    def __init__(self, values: Sequence[int]) -> None:
-        self.values = list(values)
-
-    def reshape(self, *shape: int) -> Codes:
-        assert shape == (-1,)
-        return self
-
-    def detach(self) -> Codes:
-        return self
-
-    def cpu(self) -> Codes:
-        return self
-
-    def tolist(self) -> list[int]:
-        return list(self.values)
 
 
 class FakeDataset:
@@ -75,9 +58,9 @@ def test_run_writes_bpe_artifact_and_metadata(
 
     summary = script.run(
         argparse.Namespace(
-            dataset_dir=None,
+            root=None,
             split="train",
-            cache_dir=tmp_path / "bpe",
+            bpe_root=tmp_path / "bpe",
             codec_name="longcat",
             vocab_size=100_000,
             min_frequency=0,
@@ -92,7 +75,7 @@ def test_run_writes_bpe_artifact_and_metadata(
     artifact_dir = tmp_path / "bpe" / "longcat" / "vocab_100k_minfreq_0_maxlen_none_codes_8192"
     meta = json.loads((artifact_dir / script.META_FILE).read_text(encoding="utf-8"))
 
-    assert calls == [{"codec": script.Codec.LONGCAT, "split": "train"}]
+    assert calls == [{"codec": script.Codec.LONGCAT, "root": None, "split": "train"}]
     assert (artifact_dir / script.STATE_FILE).exists()
     assert (artifact_dir / script.EVAL_FILE).exists()
     assert meta["datasets"] == [dataset.spec.to_dict()]
@@ -123,9 +106,9 @@ def test_run_evaluates_existing_bpe_artifact(
     dataset = FakeDataset([sample(source=[1, 2, 1, 2], target=[1, 2])])
     monkeypatch.setattr(script, "wmt19_tts_codec", lambda **_: dataset)
     args = argparse.Namespace(
-        dataset_dir=None,
+        root=None,
         split="train",
-        cache_dir=tmp_path / "bpe",
+        bpe_root=tmp_path / "bpe",
         codec_name="longcat",
         vocab_size=100_000,
         min_frequency=0,
@@ -143,7 +126,7 @@ def test_run_evaluates_existing_bpe_artifact(
     assert "reused" not in second
 
 
-def test_run_forces_store_profile_for_explicit_dataset_dir(
+def test_run_uses_explicit_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -155,13 +138,13 @@ def test_run_forces_store_profile_for_explicit_dataset_dir(
         return dataset
 
     monkeypatch.setattr(script, "wmt19_tts_codec", fake_wmt19_tts_codec)
-    dataset_dir = tmp_path / "wmt19_tts"
+    root = tmp_path / "wmt19_tts"
 
     script.run(
         argparse.Namespace(
-            dataset_dir=dataset_dir,
+            root=root,
             split="train",
-            cache_dir=tmp_path / "bpe",
+            bpe_root=tmp_path / "bpe",
             codec_name="longcat",
             vocab_size=100_000,
             min_frequency=0,
@@ -176,8 +159,7 @@ def test_run_forces_store_profile_for_explicit_dataset_dir(
     assert calls == [
         {
             "codec": script.Codec.LONGCAT,
-            "dataset_dir": dataset_dir,
-            "profile": script.WMT19TTSLongCatProfile.STORE,
+            "root": root,
             "split": "train",
         }
     ]
@@ -186,9 +168,9 @@ def test_run_forces_store_profile_for_explicit_dataset_dir(
 def sample(*, source: Sequence[int], target: Sequence[int]) -> Sample:
     return {
         (Role.SOURCE, Modality.AUDIO): AudioItem(
-            views={AudioView.LONGCAT: {"semantic_codes": Codes(source)}}
+            views={AudioView.LONGCAT: torch.tensor(source).unsqueeze(-1)}
         ),
         (Role.TARGET, Modality.AUDIO): AudioItem(
-            views={AudioView.LONGCAT: {"semantic_codes": Codes(target)}}
+            views={AudioView.LONGCAT: torch.tensor(target).unsqueeze(-1)}
         ),
     }

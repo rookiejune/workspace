@@ -1,7 +1,7 @@
 """Train a LongCat semantic BPE tokenizer from the prepared WMT19 TTS store.
 
-The script reads the LongCat `wmt19_tts_codec()` view, extracts source and target
-`semantic_codes`, trains `anytrain.tokenizer.CodecBPE`, and saves the artifact
+The script reads the LongCat `wmt19_tts_codec()` view, extracts codebook 0 from
+source and target, trains `anytrain.tokenizer.CodecBPE`, and saves the artifact
 under the static workspace BPE cache.
 """
 
@@ -11,7 +11,6 @@ import argparse
 import json
 import shutil
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict
 from functools import partial
 from itertools import islice
 from pathlib import Path
@@ -19,17 +18,17 @@ from typing import TYPE_CHECKING, cast
 
 from anydataset.types import AudioView, Modality, Role, Sample
 
-from zhuyin.datasets._profiles import WMT19TTSLongCatProfile
 from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
 from zhuyin.env import context
-from zhuyin.tokenizers.codec_bpe import (
+from zhuyin.tokenizers._codec_bpe_artifact import (
     DEFAULT_CODEBOOK_SIZES,
     DEFAULT_CODEC_NAME,
     DEFAULT_MAX_TOKEN_LENGTH,
     DEFAULT_MIN_FREQUENCY,
     DEFAULT_VOCAB_SIZE,
-    codec_bpe_path,
+    artifact_path,
 )
+from zhuyin.tokenizers.codec_bpe import codec_bpe_path
 
 if TYPE_CHECKING:
     from anytrain.tokenizer import CodecBPE
@@ -42,8 +41,9 @@ EVAL_FILE = "eval.json"
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the command line tokenizer preparation entry."""
 
+    args = parse_args(argv)
     with context():
-        summary = run(parse_args(argv))
+        summary = run(args)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
@@ -51,8 +51,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     """Train or reuse the configured WMT19 TTS LongCat BPE artifact."""
 
     codebook_sizes = tuple(args.codebook_sizes)
-    artifact_dir = codec_bpe_path(
-        cache_dir=args.cache_dir,
+    artifact = artifact_path(
         codec_name=args.codec_name,
         vocab_size=args.vocab_size,
         min_frequency=args.min_frequency,
@@ -60,6 +59,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         codebook_sizes=codebook_sizes,
         sample_limit=args.sample_limit,
     )
+    artifact_dir = codec_bpe_path(root=args.bpe_root, artifact=artifact)
     if (
         artifact_dir.exists()
         and not args.overwrite
@@ -71,11 +71,11 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     if artifact_dir.exists() and args.overwrite:
         shutil.rmtree(artifact_dir)
 
-    dataset_kwargs: dict[str, object] = {"codec": Codec.LONGCAT, "split": args.split}
-    if args.dataset_dir is not None:
-        dataset_kwargs["dataset_dir"] = args.dataset_dir
-        dataset_kwargs["profile"] = WMT19TTSLongCatProfile.STORE
-    dataset = wmt19_tts_codec(**dataset_kwargs)
+    dataset = wmt19_tts_codec(
+        codec=Codec.LONGCAT,
+        root=args.root,
+        split=args.split,
+    )
     from anytrain.tokenizer import CodecBPE
 
     if (artifact_dir / STATE_FILE).exists():
@@ -123,7 +123,7 @@ def frames_for(sample: Sample, role: Role) -> list[list[int]]:
     """Return LongCat semantic ids for one role as BPE frames."""
 
     view = sample[role, Modality.AUDIO].views[AudioView.LONGCAT]
-    values = view["semantic_codes"].reshape(-1).detach().cpu().tolist()
+    values = view[:, 0].reshape(-1).detach().cpu().tolist()
     return [[int(value)] for value in values]
 
 
@@ -164,7 +164,7 @@ def summarize(
         {
             "actual_vocab_size": bpe.vocab_size,
             "artifact_dir": str(artifact_dir),
-            "eval": asdict(bpe.eval(corpus(dataset, sample_limit=sample_limit))),
+            "eval": bpe.evaluate(corpus(dataset, sample_limit=sample_limit)),
         }
     )
     (artifact_dir / EVAL_FILE).write_text(
@@ -185,9 +185,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
 
     parser = argparse.ArgumentParser(description="Train LongCat semantic BPE for WMT19 TTS.")
-    parser.add_argument("--dataset-dir", type=Path)
+    parser.add_argument("--root", type=Path)
     parser.add_argument("--split", default="train")
-    parser.add_argument("--cache-dir", type=Path)
+    parser.add_argument("--bpe-root", type=Path)
     parser.add_argument("--codec-name", default=DEFAULT_CODEC_NAME)
     parser.add_argument("--vocab-size", type=int, default=DEFAULT_VOCAB_SIZE)
     parser.add_argument("--min-frequency", type=int, default=DEFAULT_MIN_FREQUENCY)

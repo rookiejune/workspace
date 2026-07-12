@@ -8,6 +8,8 @@ import pytest
 import torch
 from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
 
+from zhuyin.datasets import _wmt19_tts_store as wmt19_store
+
 SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -118,7 +120,7 @@ def test_filter_uses_wmt19_tts_dataset(tmp_path: Path, monkeypatch: pytest.Monke
         calls.append(kwargs)
         return []
 
-    monkeypatch.setattr(filter_wmt19_tts_speech, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     root = tmp_path / "wmt19_tts"
     split = "train"
     factory = filter_wmt19_tts_speech.StoreFactory(root, split)
@@ -126,8 +128,7 @@ def test_filter_uses_wmt19_tts_dataset(tmp_path: Path, monkeypatch: pytest.Monke
     assert factory() == []
     assert calls == [
         {
-            "dataset_dir": root,
-            "profile": filter_wmt19_tts_speech.WMT19TTSProfile.STORE,
+            "root": root,
             "split": split,
         }
     ]
@@ -142,7 +143,7 @@ def test_filter_default_factory_uses_default_wmt19_tts_dataset(
         calls.append(kwargs)
         return []
 
-    monkeypatch.setattr(filter_wmt19_tts_speech, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     factory = filter_wmt19_tts_speech.StoreFactory(None, "train")
 
     assert factory() == []
@@ -159,7 +160,7 @@ def test_translation_filter_uses_wmt19_tts_dataset(
         calls.append(kwargs)
         return []
 
-    monkeypatch.setattr(filter_wmt19_tts_translation, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     root = tmp_path / "wmt19_tts"
     split = "train"
     factory = filter_wmt19_tts_translation.StoreFactory(root, split)
@@ -167,8 +168,7 @@ def test_translation_filter_uses_wmt19_tts_dataset(
     assert factory() == []
     assert calls == [
         {
-            "dataset_dir": root,
-            "profile": filter_wmt19_tts_translation.WMT19TTSProfile.STORE,
+            "root": root,
             "split": split,
         }
     ]
@@ -183,7 +183,7 @@ def test_translation_filter_default_factory_uses_default_wmt19_tts_dataset(
         calls.append(kwargs)
         return []
 
-    monkeypatch.setattr(filter_wmt19_tts_translation, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     factory = filter_wmt19_tts_translation.StoreFactory(None, "train")
 
     assert factory() == []
@@ -239,9 +239,9 @@ def test_longcat_prepare_uses_wmt19_tts_dataset(
         calls.append(kwargs)
         return []
 
-    monkeypatch.setattr(prepare_wmt19_tts_longcat, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     split = "train"
-    factory = prepare_wmt19_tts_longcat.TTSFactory(split)
+    factory = prepare_wmt19_tts_longcat.StoreFactory(None, split)
 
     assert factory() == []
     assert calls == [{"split": split}]
@@ -307,7 +307,7 @@ def test_longcat_prepare_writes_view_materializer_directly(
         "ViewMaterializer",
         FakeViewMaterializer,
     )
-    monkeypatch.setattr(prepare_wmt19_tts_longcat, "wmt19_tts", fake_wmt19_tts)
+    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     monkeypatch.setattr(prepare_wmt19_tts_longcat, "is_ready_store", lambda _path: False)
     monkeypatch.setattr(
         prepare_wmt19_tts_longcat,
@@ -358,13 +358,12 @@ def test_longcat_prepare_writes_view_materializer_directly(
     )
     assert wmt19_tts_calls == [
         {
-            "dataset_dir": tmp_path,
-            "profile": prepare_wmt19_tts_longcat.WMT19TTSProfile.STORE,
+            "root": tmp_path,
             "split": "dev",
         }
     ]
-    assert stage.path == str(tmp_path / "longcat")
-    assert stage.sample_count == 1
+    assert stage["path"] == str(tmp_path / "longcat")
+    assert stage["sample_count"] == 1
 
 
 def test_longcat_factory_uses_default_provider_options(

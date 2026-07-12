@@ -11,14 +11,16 @@ run 目录、speaker vocabulary 或具体实验的逻辑数据集命名。
 入口按这个顺序解析根目录：
 
 1. `common_voice(root=...)`
-2. `$STATIC_HOME/datasets/common_voice`
-3. `LOCATION` 自动探测出的默认 `$STATIC_HOME/datasets/common_voice`，同时发 warning
+2. `zhuyin.env.static_home() / "datasets/common_voice"`
+
+`static_home()` 优先读取 `$STATIC_HOME`；未设置时使用 `LOCATION` 对应默认值并发
+`RuntimeWarning`。路径解析是纯函数调用，不修改进程环境。显式传 `root` 时不解析
+workspace 默认路径，也不产生默认路径 warning。
 
 如果 `root` 指向 `cv-corpus-*` 下面的具体语种目录，语种由目录名推断；否则交给
 anydataset 的 Common Voice preset 从根目录结构推断最新语料版本和默认语种。
 
-加载入口本身不写入第三方缓存变量。`with zhuyin.env.context():` 只临时注入
-`LOCATION`、`STATIC_HOME` 和 `DYNAMIC_HOME`，具体第三方变量由对应脚本或调用环境显式设置。
+加载入口不写入 workspace 或第三方环境变量。第三方变量由对应脚本或调用环境显式设置。
 
 ## Workspace API
 
@@ -30,6 +32,12 @@ dataset = common_voice(split="train")
 sample = next(iter(dataset))
 audio = sample[(Role.DEFAULT, Modality.AUDIO)]
 speaker = audio.meta[AudioMeta.SPEAKER_ID]
+```
+
+临时读取其他物理目录时直接传 `root`：
+
+```python
+dataset = common_voice(root="/data/common_voice", split="dev")
 ```
 
 Common Voice 的 `client_id` 已由 anydataset preset 收进 default audio 的

@@ -11,11 +11,10 @@ import argparse
 import json
 import os
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from enum import auto
-from itertools import islice
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import filter_wmt19_tts_speech as speech_filter
 import filter_wmt19_tts_translation as translation_filter
@@ -23,8 +22,9 @@ from anydataset import FilterRule
 from anydataset.filter import FilteredDataset
 
 from zhuyin._compat import StrEnum
-from zhuyin.datasets.wmt19_tts import WMT19_TTS
-from zhuyin.env import context, datasets_home, static_home
+from zhuyin.datasets._wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
+from zhuyin.datasets._wmt19_tts_store import StoreFactory, resolve_root
+from zhuyin.env import context, static_home
 
 
 class Stage(StrEnum):
@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 def apply_filters(args: argparse.Namespace) -> list[dict[str, Any]]:
-    factory: Any = translation_filter.StoreFactory(
+    factory: Any = StoreFactory(
         args.root if args.root_explicit else None,
         args.split,
     )
@@ -171,24 +171,9 @@ def speech_summary(
     }
 
 
-def write_metrics_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-
-
-def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
-    output: list[Mapping[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in islice(handle, limit):
-            output.append(cast(Mapping[str, Any], json.loads(line)))
-    return output
-
-
 def configure_env(args: argparse.Namespace) -> None:
     args.root_explicit = args.root is not None
-    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
-    args.root = args.root.expanduser().resolve()
+    args.root = resolve_root(args.root)
     args.reports_dir = args.root / "reports" / "speech_translation"
     args.whisper_root = _env_path(
         "ANYTRAIN_WHISPER_ROOT",
@@ -255,14 +240,6 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
             },
         },
     }
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

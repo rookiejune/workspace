@@ -23,6 +23,7 @@ from zhuyin import wmt19_tts
 - 新增入口时，优先打磨函数签名和返回类型；不要让调用方依赖内部目录结构、临时文件名或第三方对象的隐式副作用。
 - 对外入口要明确失败原因。缺少数据、环境变量错误、远程资源不可用时直接抛出清晰异常，不用兼容逻辑静默降级。
 - 返回对象应尽量是稳定的逻辑对象；如果必须暴露第三方类型，应在模块文档里说明边界和版本假设。
+- 不在公开数据集入口暴露机器名或物理协议 profile；默认物理来源由 loader 根据 location 和逻辑视图私有选择，显式 `root` 表示标准 store。
 
 ## 目录约定
 
@@ -39,6 +40,8 @@ from zhuyin import wmt19_tts
 - 每个对外模块都要有模块文档，说明它提供的能力、输入输出和边界，不只记录内部实现步骤。
 - 业务规则放在服务层或清晰的 helper 中，脚本、notebook 和 job wrapper 只做编排。
 - 只在本层处理加载、路径、缓存和对象组装；通用数据结构、读写协议和可复用算法优先放在 `third_party/`。
+- `location()`、`static_home()`、`dynamic_home()` 和 `datasets_home()` 纯解析并返回值，不修改 `os.environ`；`context()` 只用于确实依赖环境变量的第三方代码或脚本。
+- 机器 home 和探测 marker 归 `zhuyin.env`，数据集 export、模型 checkpoint 等具体资产路径归对应资源模块。
 - 不在 `workspace` 中写大量训练、评测或实验分支逻辑；这些应进入具体工程或实验目录。
 - 类型提示要覆盖入口参数和返回值。需要避免重 import 时，用 `TYPE_CHECKING` 隔离。
 - 发现 `third_party/` 或具体工程 `src/` 的问题时，先按顶层 `AGENTS.md` 的要求给出推荐方案并确认，不直接越界修改。

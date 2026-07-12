@@ -77,26 +77,28 @@ def test_location_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None
         env.location()
 
 
-def test_static_home_requires_context_when_unset(
+def test_static_home_uses_detected_default_without_mutating_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, set())
 
-    with pytest.raises(RuntimeError, match=env.STATIC_HOME_ENV):
-        env.static_home()
+    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
+        assert env.static_home() == env.Location.FUDAN.static_home
 
     assert env.STATIC_HOME_ENV not in os.environ
 
 
-def test_dynamic_home_requires_context_when_unset(
+def test_dynamic_home_uses_detected_default_without_mutating_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
+    _mock_existing_paths(monkeypatch, {"/nfs/yin.zhu"})
 
-    with pytest.raises(RuntimeError, match=env.DYNAMIC_HOME_ENV):
-        env.dynamic_home()
+    with pytest.warns(RuntimeWarning, match=env.DYNAMIC_HOME_ENV):
+        assert env.dynamic_home() == env.Location.HZ.dynamic_home
 
     assert env.DYNAMIC_HOME_ENV not in os.environ
 
@@ -107,8 +109,8 @@ def test_context_defaults_to_location_roots(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
     with pytest.warns(RuntimeWarning, match=env.Location.HZ.value), env.context():
-        assert env.static_home() == env.HzEnv.static_home
-        assert env.dynamic_home() == env.HzEnv.dynamic_home
+        assert env.static_home() == env.Location.HZ.static_home
+        assert env.dynamic_home() == env.Location.HZ.dynamic_home
 
     assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
     assert env.STATIC_HOME_ENV not in os.environ
@@ -121,8 +123,8 @@ def test_context_defaults_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
 
     with pytest.warns(RuntimeWarning, match=env.Location.US.value), env.context():
-        assert env.static_home() == env.UsEnv.static_home
-        assert env.dynamic_home() == env.UsEnv.dynamic_home
+        assert env.static_home() == env.Location.US.static_home
+        assert env.dynamic_home() == env.Location.US.dynamic_home
 
     assert os.environ[env.LOCATION_ENV] == env.Location.US.value
     assert env.STATIC_HOME_ENV not in os.environ
@@ -215,8 +217,8 @@ def test_context_none_override_re_resolves_workspace(
         pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV),
         env.context(STATIC_HOME=None, CUSTOM_ENV="value"),
     ):
-        assert env.static_home() == env.FudanEnv.static_home
-        assert os.environ[env.STATIC_HOME_ENV] == str(env.FudanEnv.static_home)
+        assert env.static_home() == env.Location.FUDAN.static_home
+        assert os.environ[env.STATIC_HOME_ENV] == str(env.Location.FUDAN.static_home)
         assert os.environ["CUSTOM_ENV"] == "value"
 
     assert os.environ[env.STATIC_HOME_ENV] == "/old/static"
@@ -226,13 +228,11 @@ def test_context_none_override_re_resolves_workspace(
 
 def test_context_applies_non_workspace_overrides() -> None:
     with env.context(
-        {
-            env.LOCATION_ENV: env.Location.FUDAN.value,
-            env.STATIC_HOME_ENV: "/data/static",
-            env.DYNAMIC_HOME_ENV: "/data/dynamic",
-            "HF_HOME": "/custom/hf",
-            "CUSTOM_ENV": "/custom/value",
-        }
+        LOCATION=env.Location.FUDAN.value,
+        STATIC_HOME="/data/static",
+        DYNAMIC_HOME="/data/dynamic",
+        HF_HOME="/custom/hf",
+        CUSTOM_ENV="/custom/value",
     ):
         assert env.static_home() == Path("/data/static")
         assert env.dynamic_home() == Path("/data/dynamic")
@@ -247,12 +247,9 @@ def test_context_applies_non_workspace_overrides() -> None:
 def test_context_rejects_empty_non_workspace_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    environ = {
-        env.LOCATION_ENV: env.Location.FUDAN.value,
-        env.STATIC_HOME_ENV: "/data/static",
-        env.DYNAMIC_HOME_ENV: "/data/dynamic",
-        "CUSTOM_ENV": "",
-    }
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
+    monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/data/dynamic")
 
-    with pytest.raises(ValueError, match="CUSTOM_ENV"), env.context(environ):
+    with pytest.raises(ValueError, match="CUSTOM_ENV"), env.context(CUSTOM_ENV=""):
         pass

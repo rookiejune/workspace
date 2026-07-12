@@ -1,9 +1,10 @@
 # Workspace Jobs
 
 `env.sh` locates this repository and prepends the local `PYTHONPATH`.
-Python code resolves `LOCATION`, `STATIC_HOME` and `DYNAMIC_HOME` through
-`zhuyin.env.context()`, so job submission should first enter the intended Python
-environment and then run the wrapper directly.
+Python path helpers resolve `LOCATION`, `STATIC_HOME` and `DYNAMIC_HOME` without
+mutating the process environment. Scripts may enter `zhuyin.env.context()` when
+third-party code requires those values as environment variables. Job submission
+should first enter the intended Python environment and then run the wrapper directly.
 
 Common variables:
 
@@ -25,17 +26,32 @@ Common wrappers:
 ```bash
 jobs/prepare_wmt19_tts.sh
 jobs/prepare_wmt19_tts_longcat.sh
+jobs/prepare_wmt19_tts_stable.sh
+jobs/prepare_wmt19_tts_unicodec.sh
 jobs/filter_wmt19_tts_speech.sh
 jobs/filter_wmt19_tts_translation.sh
 jobs/filter_wmt19_tts_speech_translation.sh
 jobs/prepare_wmt19_tts_longcat_bpe.sh
 ```
 
-The LongCat BPE wrapper writes to `$BPE_CACHE_DIR`, which defaults to
-`$STATIC_HOME/bpe` inside Python. The default BPE vocab size is 100k; `codes_8192` in the
-artifact name records the LongCat semantic codebook size, not the target BPE
-vocab size. Debug runs can keep their own artifact names by limiting the number
-of samples:
+Target CLI path contract:
+
+| Option | Meaning |
+| --- | --- |
+| `--root` | WMT19 TTS dataset root containing `base/`, `longcat/`, and other views. |
+| `--bpe-root` | BPE artifact root; defaults to `$BPE_CACHE_DIR`, then `$STATIC_HOME/bpe`. |
+| `--split` | Logical dataset split, defaulting to `train`. |
+
+All WMT19 prepare and filter scripts use `--root` with the same meaning. The BPE
+script also uses `--root` for its input dataset and keeps its output location on
+the separate `--bpe-root` axis. Wrappers do not translate these options or add
+compatibility aliases.
+
+The LongCat BPE wrapper writes to `--bpe-root` when it is explicit, otherwise to
+`$BPE_CACHE_DIR`, which defaults to `$STATIC_HOME/bpe` inside Python. The default
+BPE vocab size is 100k; `codes_8192` in the artifact name records the LongCat
+semantic codebook size, not the target BPE vocab size. Debug runs can keep their
+own artifact names by limiting the number of samples:
 
 ```bash
 jobs/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000

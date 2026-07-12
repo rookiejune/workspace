@@ -5,29 +5,26 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from anydataset import AnyDataset
 from anydataset.provider.longcat import LongCatProvider
 from anydataset.store import ViewMaterializer
-from anydataset.store.reader import read_store_manifest
 
-from zhuyin.datasets._profiles import WMT19TTSProfile
-from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
-from zhuyin.env import context, datasets_home
+from zhuyin.datasets._wmt19_tts_io import (
+    Stage,
+    is_ready_store,
+    ready_stage,
+    store_sample_count,
+    write_json,
+)
+from zhuyin.datasets._wmt19_tts_io import (
+    stage as new_stage,
+)
+from zhuyin.datasets._wmt19_tts_store import StoreFactory, resolve_root
+from zhuyin.env import context
 
 LONGCAT_STORE_DIR = "longcat"
-
-
-@dataclass(frozen=True)
-class Stage:
-    name: str
-    path: str | None
-    reused: bool
-    seconds: float | None
-    sample_count: int | None = None
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -40,7 +37,7 @@ def main(argv: list[str] | None = None) -> None:
         stage = write_longcat_store(args)
         summary = {
             "config": run_config(args),
-            "stage": asdict(stage),
+            "stage": stage,
             "seconds": time.perf_counter() - started_at,
         }
         write_json(args.reports_dir / "prepare_longcat_summary.json", summary)
@@ -62,35 +59,18 @@ def write_longcat_store(args: argparse.Namespace) -> Stage:
         write_workers=args.write_workers,
         write_prefetch=args.write_prefetch,
     ).write(
-        dataset_factory=TTSFactory(args.split, args.root),
+        dataset_factory=StoreFactory(args.root, args.split),
         provider_factory=LongCatFactory(),
         devices=args.devices,
     )
-    return Stage(
-        name="longcat",
-        path=str(args.longcat_store),
-        reused=False,
+    return new_stage(
+        "longcat",
+        args.longcat_store,
         seconds=time.perf_counter() - start,
         sample_count=store_sample_count(args.longcat_store),
     )
 
 
-@dataclass(frozen=True)
-class TTSFactory:
-    split: str
-    dataset_dir: Path | None = None
-
-    def __call__(self) -> AnyDataset:
-        if self.dataset_dir is None:
-            return wmt19_tts(split=self.split)
-        return wmt19_tts(
-            dataset_dir=self.dataset_dir,
-            profile=WMT19TTSProfile.STORE,
-            split=self.split,
-        )
-
-
-@dataclass(frozen=True)
 class LongCatFactory:
     def __call__(self, device: str) -> LongCatProvider:
         return LongCatProvider(
@@ -98,32 +78,8 @@ class LongCatFactory:
         )
 
 
-def is_ready_store(path: Path) -> bool:
-    if not path.exists():
-        return False
-    if not (path / ".ready").exists():
-        return False
-    read_store_manifest(path)
-    return True
-
-
-def ready_stage(name: str, path: Path) -> Stage:
-    return Stage(
-        name=name,
-        path=str(path),
-        reused=True,
-        seconds=None,
-        sample_count=store_sample_count(path),
-    )
-
-
-def store_sample_count(path: Path) -> int:
-    return read_store_manifest(path).sample_count
-
-
 def configure_env(args: argparse.Namespace) -> None:
-    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
-    args.root = args.root.expanduser().resolve()
+    args.root = resolve_root(args.root)
     args.root.mkdir(parents=True, exist_ok=True)
     args.longcat_store = args.root / LONGCAT_STORE_DIR
     args.reports_dir = args.root / "reports"
@@ -143,14 +99,6 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "write_prefetch": args.write_prefetch,
         "resume": True,
     }
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

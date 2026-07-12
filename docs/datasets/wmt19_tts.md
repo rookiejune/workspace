@@ -1,11 +1,37 @@
 # WMT19 TTS
 
-`wmt19_tts()` 返回逻辑 WMT19 zh-en TTS 对象，source/target 两侧包含文本和
-waveform。`wmt19_tts_codec()` 返回同一数据集的 codec 视图。
+`wmt19_tts()` 返回逻辑 WMT19 zh-en TTS 对象，source/target 两侧包含文本和 waveform。
+`wmt19_tts_codec()` 返回同一数据集的 codec 视图；Stable Codec 和 UniCodec 也提供
+不要求调用方传枚举的具名入口。物理来源由 loader 私有选择，不改变逻辑 sample 契约。
 
-入口会根据 `LOCATION` 选择默认物理 profile，但返回的逻辑 sample 契约保持一致。
-显式传 `dataset_dir=...` 时只覆盖当前 profile 的物理 root；需要强制读取标准 store
-时，同时传 `profile=...STORE`。
+目标公开接口：
+
+```python
+from zhuyin.datasets.wmt19_tts import (
+    dataset_root,
+    wmt19_tts,
+    wmt19_tts_codec,
+    wmt19_tts_stable,
+    wmt19_tts_unicodec,
+)
+
+tts = wmt19_tts()
+longcat = wmt19_tts_codec()
+stable = wmt19_tts_stable()
+unicodec = wmt19_tts_unicodec()
+store = wmt19_tts(root=dataset_root())
+```
+
+参数规则：
+
+- 显式传 `root`：读取该根目录下的标准 store。
+- `root=None`：根据当前 location 和逻辑视图选择默认物理来源。
+- HZ 默认从固定 export 读取 TTS 和 LongCat；这些路径由 WMT19 模块私有管理。
+- Stable Codec 和 UniCodec 没有 HZ export，所有 location 默认读取标准 store。
+- 在 HZ 强制读取标准 store 时传 `root=dataset_root()`。
+
+`root` 始终指 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`stable/` 等视图，
+不指向具体 view 目录。
 
 默认 TTS 入口：
 
@@ -17,9 +43,11 @@ LOCATION=hz     sharded_csv:///nfs/yin.zhu/train/text_to_speech/moss_tts_hz_expo
 对应 workspace 入口：
 
 ```python
-from zhuyin.datasets.wmt19_tts import wmt19_tts
+from zhuyin.datasets.wmt19_tts import dataset_root, wmt19_tts
 
 dataset = wmt19_tts()
+store = wmt19_tts(root=dataset_root())
+temporary = wmt19_tts(root="/data/wmt19_tts", split="dev")
 ```
 
 默认 LongCat codec 视图：
@@ -32,10 +60,18 @@ LOCATION=hz     hf-disk:///nfs/yin.zhu/datasets/wmt19_tts_longcat_codes_text_cle
 对应 workspace 入口：
 
 ```python
-from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
+from zhuyin.datasets.wmt19_tts import (
+    Codec,
+    dataset_root,
+    wmt19_tts_codec,
+    wmt19_tts_stable,
+    wmt19_tts_unicodec,
+)
 
 longcat = wmt19_tts_codec()
-stable = wmt19_tts_codec(codec=Codec.STABLE)
+stable = wmt19_tts_stable()
+unicodec = wmt19_tts_unicodec()
+store_longcat = wmt19_tts_codec(codec=Codec.LONGCAT, root=dataset_root())
 ```
 
 交互式检查入口：
@@ -48,13 +84,13 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 两侧 audio 的 `AudioView.LONGCAT` keys、`semantic_codes` / `acoustic_codes` shape，并用
 LongCat decoder 还原 source/target 波形供试听。
 
-如果 `STATIC_HOME` 未设置，入口会使用 `LOCATION` 对应默认值并发 warning；
-`LOCATION` 缺失时会按 `/share5_video`、`/nfs/yin.zhu`、`/mnt` 的顺序探测默认位置。
-加载入口本身不写入第三方缓存变量。`with zhuyin.env.context():` 只临时注入
-`LOCATION`、`STATIC_HOME` 和 `DYNAMIC_HOME`；`HF_HOME`、`BPE_CACHE_DIR` 或
-`ANYTRAIN_WHISPER_ROOT` 这类变量由具体脚本按需读取或由调用环境显式设置。
-临时使用其他物理根目录时，传 `dataset_dir=...`；需要强制选择物理加载方案时，
-传 `profile=...`。
+标准 store 需要默认路径且 `STATIC_HOME` 未设置时，`static_home()` 使用 `LOCATION`
+对应默认值并发 warning；`LOCATION` 缺失时会按 `/share5_video`、`/nfs/yin.zhu`、`/mnt`
+的顺序探测默认位置。路径解析不修改进程环境。
+
+加载入口本身不写入第三方缓存变量。`HF_HOME`、`BPE_CACHE_DIR` 或
+`ANYTRAIN_WHISPER_ROOT` 由具体脚本按需读取或由调用环境显式设置。临时使用其他标准 store
+根目录时传 `root=...`。
 
 ## 合成 TTS
 
@@ -105,6 +141,40 @@ python scripts/prepare_wmt19_tts_longcat.py
 
 ```bash
 jobs/prepare_wmt19_tts_longcat.sh
+```
+
+## 准备 Stable Codec
+
+Stable Codec 脚本消费 `base`，写出供 `wmt19_tts_stable()` 读取的 `stable` store。
+该 store 保留 source/target 文本及语言信息，并增加
+`AudioView.STABLE`；它不依赖 HZ 专用 export。
+
+```bash
+PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
+python scripts/prepare_wmt19_tts_stable.py
+```
+
+可提交任务入口是：
+
+```bash
+jobs/prepare_wmt19_tts_stable.sh
+```
+
+## 准备 UniCodec
+
+UniCodec 脚本消费 `base`，写出供 `wmt19_tts_unicodec()` 读取的 `unicodec` store。
+该 store 保留 source/target 文本及语言信息，codes 使用统一的
+`[frame, codebook]` 布局；speech 默认使用 domain `0` 和 bandwidth id `0`。
+
+```bash
+PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
+python scripts/prepare_wmt19_tts_unicodec.py
+```
+
+可提交任务入口是：
+
+```bash
+jobs/prepare_wmt19_tts_unicodec.sh
 ```
 
 ## 质量过滤
@@ -158,14 +228,10 @@ metrics 分别写成 `translation_quality_metrics.jsonl` 和
 jobs/filter_wmt19_tts_speech_translation.sh
 ```
 
-121 上当前物理 GPU 3 能被 `nvidia-smi` 枚举，但 PyTorch CUDA 初始化会报
-`DeferredCudaCallError: device=3, num_gpus=3`。notebook 的首个导入单元在未手动设置
-`CUDA_VISIBLE_DEVICES` 时会默认使用 `0,1,2`；如果 kernel 已经 import 过 `torch`，需要
-重启 kernel 后重新运行首格才会生效。
-
 LongCat 训练契约和 speech-to-speech 保持一致：source 和 target 两侧 audio 都包含
-`AudioView.LONGCAT`，其中至少有 `semantic_codes` 和 `acoustic_codes`。需要文本或
-waveform 时使用 `wmt19_tts()`。
+`AudioView.LONGCAT`，逻辑值统一为 `[frame, codebook]` Tensor，第 0 个 codebook 是
+semantic code，其余 codebook 是 acoustic code。标准 store 的旧物理 dict 在 loader
+边界完成归一化；需要文本或 waveform 时使用 `wmt19_tts()`。
 
 ## LongCat BPE
 
@@ -182,8 +248,9 @@ python scripts/prepare_wmt19_tts_longcat_bpe.py
 jobs/prepare_wmt19_tts_longcat_bpe.sh
 ```
 
-脚本默认从 `wmt19_tts_codec(codec=Codec.LONGCAT, split="train")` 读取 source 和 target 两侧完整
-`semantic_codes`，训练 `anytrain.tokenizer.CodecBPE` 的 100k vocab。训练参数中
+脚本默认从 `wmt19_tts_codec(codec=Codec.LONGCAT, split="train")` 读取 source 和 target 两侧
+完整 LongCat codes，并使用第 0 个 semantic codebook 训练 `anytrain.tokenizer.CodecBPE`
+的 100k vocab。训练参数中
 `vocab_size`、`min_frequency`、`show_progress` 和
 `max_token_length` 对齐 `tokenizers.trainers.BpeTrainer`。输出根目录优先使用
 `$BPE_CACHE_DIR`；未设置时写到 `$STATIC_HOME/bpe`，并写出
@@ -198,11 +265,16 @@ PYTHONPATH=src:../third_party/anytrain/src:../third_party/anydataset/src \
 python scripts/prepare_wmt19_tts_longcat_bpe.py --sample-limit 1000
 ```
 
-代码里通过 workspace 入口拿路径或 tokenizer：
+代码里先通过 workspace 入口定位准确 artifact，再显式加载 tokenizer：
 
 ```python
 from zhuyin.tokenizers.codec_bpe import codec_bpe, codec_bpe_path
 
 path = codec_bpe_path()
-bpe = codec_bpe()
+bpe = codec_bpe(path)
 ```
+
+`codec_bpe_path()` 的根目录按显式 `root`、`BPE_CACHE_DIR`、`$STATIC_HOME/bpe` 的顺序
+解析，`artifact` 参数表示其中的稳定相对路径。vocab size、codebook size 和训练参数到
+artifact 名的转换留在 BPE 训练服务。训练脚本使用 `--root` 指定输入 WMT19 TTS 数据集根，
+使用 `--bpe-root` 指定输出 artifact 根，避免同一个参数同时表达输入和输出路径。

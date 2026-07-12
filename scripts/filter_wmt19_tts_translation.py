@@ -10,19 +10,18 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from itertools import islice
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from anydataset import AnyDataset, FilterRule
+from anydataset import FilterRule
 from anydataset.quality.translation import Predicate as TranslationQuality
 from anydataset.quality.translation import Profile as TranslationQualityProfile
 
-from zhuyin.datasets._profiles import WMT19TTSProfile
-from zhuyin.datasets.wmt19_tts import WMT19_TTS, wmt19_tts
-from zhuyin.env import context, datasets_home
+from zhuyin.datasets._wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
+from zhuyin.datasets._wmt19_tts_store import StoreFactory, resolve_root
+from zhuyin.env import context
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -71,21 +70,6 @@ def apply_translation_filter(args: argparse.Namespace) -> dict[str, Any]:
         "metrics_jsonl": str(metrics_report),
         "preview": preview_metrics(metrics_report, limit=args.preview_metrics),
     }
-
-
-@dataclass(frozen=True)
-class StoreFactory:
-    path: Path | None
-    split: str
-
-    def __call__(self) -> AnyDataset:
-        if self.path is None:
-            return wmt19_tts(split=self.split)
-        return wmt19_tts(
-            dataset_dir=self.path,
-            profile=WMT19TTSProfile.STORE,
-            split=self.split,
-        )
 
 
 @dataclass(frozen=True)
@@ -139,24 +123,9 @@ class TranslationQualityFactory:
         )
 
 
-def write_metrics_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-
-
-def preview_metrics(path: Path, *, limit: int) -> list[Mapping[str, Any]]:
-    output: list[Mapping[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in islice(handle, limit):
-            output.append(cast(Mapping[str, Any], json.loads(line)))
-    return output
-
-
 def configure_env(args: argparse.Namespace) -> None:
     args.root_explicit = args.root is not None
-    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
-    args.root = args.root.expanduser().resolve()
+    args.root = resolve_root(args.root)
     args.reports_dir = args.root / "reports"
 
 
@@ -188,14 +157,6 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
             "max_repeated_run": args.max_repeated_run,
         },
     }
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

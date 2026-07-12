@@ -10,16 +10,18 @@ from anydataset.types import AudioView, Modality, Role, Source, TextMeta, TextVi
 
 from zhuyin import env
 from zhuyin.datasets import wmt19_tts as module
-from zhuyin.datasets._profiles import (
-    WMT19TTSLongCatProfile,
-    WMT19TTSProfile,
-)
 
 
 class BuiltDataset:
-    def __init__(self, spec: Any, parse_fn: Any = None) -> None:
+    def __init__(
+        self,
+        spec: Any,
+        parse_fn: Any = None,
+        transforms: Any = None,
+    ) -> None:
         self.spec = spec
         self.parse_fn = parse_fn
+        self.transforms = transforms
         self.merged: BuiltDataset | None = None
 
     def merge(self, dataset: BuiltDataset) -> BuiltDataset:
@@ -27,14 +29,14 @@ class BuiltDataset:
         return self
 
 
-def test_wmt19_tts_uses_explicit_dataset_dir(
+def test_wmt19_tts_uses_explicit_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts(dataset_dir="/data/wmt19", split="dev")
+    dataset = module.wmt19_tts(root="/data/wmt19", split="dev")
 
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/wmt19/base"
@@ -64,29 +66,22 @@ def test_wmt19_tts_hz_location_defaults_to_hz_export(
     assert dataset.parse_fn is module._parse_hz_tts_row
 
 
-def test_wmt19_tts_explicit_profile_overrides_location(
+def test_wmt19_tts_dataset_root_uses_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STATIC_HOME", "/data/static")
+
+    assert module.dataset_root() == Path("/data/static/datasets/wmt19_tts")
+
+
+def test_wmt19_tts_explicit_root_selects_store_on_hz(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCATION", "hz")
-    monkeypatch.setenv("STATIC_HOME", "/data/static")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
-    dataset = module.wmt19_tts(profile=WMT19TTSProfile.STORE)
+    dataset = module.wmt19_tts(root="/data/wmt19", split="dev")
 
     assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/base"
-
-
-def test_wmt19_tts_explicit_dataset_dir_overrides_current_profile_root(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LOCATION", "hz")
-    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
-
-    dataset = module.wmt19_tts(dataset_dir="/data/wmt19", split="dev")
-
-    assert dataset.spec.source == "sharded_csv"
-    assert dataset.spec.path == "/data/wmt19"
+    assert dataset.spec.path == "/data/wmt19/base"
     assert dataset.spec.split == "dev"
 
 
@@ -98,16 +93,40 @@ def test_wmt19_tts_codec_longcat_uses_longcat_store(
 
     dataset = module.wmt19_tts_codec(
         codec=module.Codec.LONGCAT,
-        dataset_dir="/data/wmt19",
+        root="/data/wmt19",
         split="dev",
     )
 
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/wmt19/longcat"
     assert dataset.spec.split == "dev"
+    assert set(dataset.transforms) == {
+        (Role.SOURCE, Modality.AUDIO),
+        (Role.TARGET, Modality.AUDIO),
+    }
 
 
-def test_wmt19_tts_codec_longcat_explicit_dataset_dir_overrides_current_profile_root(
+def test_longcat_store_transform_normalizes_the_logical_view() -> None:
+    item = module.AudioItem(
+        views={
+            AudioView.LONGCAT: {
+                "semantic_codes": torch.tensor([1, 2, 3]),
+                "acoustic_codes": torch.tensor([[4, 5]]),
+            }
+        },
+        meta={"speaker": "test"},
+    )
+
+    transformed = module._longcat_item(item)
+
+    assert torch.equal(
+        transformed.views[AudioView.LONGCAT],
+        torch.tensor([[1, 4], [2, 5]]),
+    )
+    assert transformed.meta == item.meta
+
+
+def test_wmt19_tts_codec_longcat_explicit_root_selects_store_on_hz(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LOCATION", "hz")
@@ -115,12 +134,12 @@ def test_wmt19_tts_codec_longcat_explicit_dataset_dir_overrides_current_profile_
 
     dataset = module.wmt19_tts_codec(
         codec=module.Codec.LONGCAT,
-        dataset_dir="/data/wmt19",
+        root="/data/wmt19",
         split="dev",
     )
 
-    assert dataset.spec.source == Source.HF_DISK
-    assert dataset.spec.path == "/data/wmt19"
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/wmt19/longcat"
     assert dataset.spec.split == "dev"
 
 
@@ -138,25 +157,10 @@ def test_wmt19_tts_codec_longcat_hz_location_defaults_to_hf_disk(
     assert dataset.parse_fn is module._parse_hz_longcat_row
 
 
-def test_wmt19_tts_codec_longcat_explicit_profile_overrides_location(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LOCATION", "hz")
-    monkeypatch.setenv("STATIC_HOME", "/data/static")
-    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
-
-    dataset = module.wmt19_tts_codec(
-        codec=module.Codec.LONGCAT,
-        profile=WMT19TTSLongCatProfile.STORE,
-    )
-
-    assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/longcat"
-
-
 def test_wmt19_tts_codec_stable_uses_stable_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("LOCATION", "hz")
     monkeypatch.setenv("STATIC_HOME", "/data/static")
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
 
@@ -165,11 +169,25 @@ def test_wmt19_tts_codec_stable_uses_stable_store(
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/static/datasets/wmt19_tts/stable"
     assert dataset.spec.split == "dev"
-    assert dataset.merged is not None
-    assert dataset.merged.spec.path == "/data/static/datasets/wmt19_tts/base"
+    assert dataset.merged is None
 
 
-def test_wmt19_tts_codec_stable_explicit_dataset_dir(
+def test_wmt19_tts_codec_unicodec_uses_store_on_hz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LOCATION", "hz")
+    monkeypatch.setenv("STATIC_HOME", "/data/static")
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_codec(codec=module.Codec.UNICODEC, split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/unicodec"
+    assert dataset.spec.split == "dev"
+    assert dataset.merged is None
+
+
+def test_wmt19_tts_codec_stable_explicit_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -177,21 +195,42 @@ def test_wmt19_tts_codec_stable_explicit_dataset_dir(
 
     dataset = module.wmt19_tts_codec(
         codec="stable",
-        dataset_dir=tmp_path / "wmt19",
+        root=tmp_path / "wmt19",
         split="train",
     )
 
     assert dataset.spec.path == str(tmp_path / "wmt19" / "stable")
-    assert dataset.merged is not None
-    assert dataset.merged.spec.path == str(tmp_path / "wmt19" / "base")
+    assert dataset.merged is None
 
 
-def test_wmt19_tts_codec_rejects_cross_codec_profile() -> None:
-    with pytest.raises(ValueError, match="does not accept profile"):
-        module.wmt19_tts_codec(
-            codec=module.Codec.STABLE,
-            profile=WMT19TTSLongCatProfile.STORE,
-        )
+def test_wmt19_tts_stable_uses_named_codec_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_stable(root="/data/wmt19", split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/wmt19/stable"
+    assert dataset.spec.split == "dev"
+
+
+def test_wmt19_tts_unicodec_uses_named_codec_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_unicodec(root="/data/wmt19", split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/wmt19/unicodec"
+    assert dataset.spec.split == "dev"
+
+
+def test_wmt19_tts_dataset_root_expands_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "/home/tester")
+
+    assert module.dataset_root("~/wmt19") == Path("/home/tester/wmt19")
 
 
 def test_wmt19_tts_rejects_empty_static_home(
@@ -204,13 +243,16 @@ def test_wmt19_tts_rejects_empty_static_home(
 
 
 def test_wmt19_tts_defaults_to_fudan_static_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LOCATION", raising=False)
     monkeypatch.delenv("STATIC_HOME", raising=False)
     monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+    monkeypatch.setattr(Path, "exists", lambda _path: False)
 
-    with pytest.warns(RuntimeWarning), env.context():
+    with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
         dataset = module.wmt19_tts()
 
     assert dataset.spec.path == "/mnt/pami202/zhuyin/datasets/wmt19_tts/base"
+    assert env.STATIC_HOME_ENV not in os.environ
 
 
 def test_wmt19_tts_does_not_configure_derived_environment(
@@ -300,22 +342,14 @@ def test_parse_hz_longcat_row_loads_logical_sample() -> None:
     target_text = sample[Role.TARGET, Modality.TEXT]
 
     assert torch.equal(
-        source_audio.views[AudioView.LONGCAT]["semantic_codes"],
-        torch.tensor([1, 2]),
-    )
-    assert torch.equal(
-        source_audio.views[AudioView.LONGCAT]["acoustic_codes"],
-        torch.tensor([[3, 4]]),
+        source_audio.views[AudioView.LONGCAT],
+        torch.tensor([[1, 3], [2, 4]]),
     )
     assert source_text.views[TextView.TEXT] == "你好"
     assert source_text.meta[TextMeta.LANG] == "zh"
     assert torch.equal(
-        target_audio.views[AudioView.LONGCAT]["semantic_codes"],
-        torch.tensor([5, 6]),
-    )
-    assert torch.equal(
-        target_audio.views[AudioView.LONGCAT]["acoustic_codes"],
-        torch.tensor([[7, 8]]),
+        target_audio.views[AudioView.LONGCAT],
+        torch.tensor([[5, 7], [6, 8]]),
     )
     assert target_text.views[TextView.TEXT] == "hello"
     assert target_text.meta[TextMeta.LANG] == "en"
@@ -339,18 +373,10 @@ def test_parse_hz_longcat_row_aligns_codes_to_shortest_length() -> None:
     target_audio = sample[Role.TARGET, Modality.AUDIO]
 
     assert torch.equal(
-        source_audio.views[AudioView.LONGCAT]["semantic_codes"],
-        torch.tensor([1, 2]),
+        source_audio.views[AudioView.LONGCAT],
+        torch.tensor([[1, 4], [2, 5]]),
     )
     assert torch.equal(
-        source_audio.views[AudioView.LONGCAT]["acoustic_codes"],
-        torch.tensor([[4, 5]]),
-    )
-    assert torch.equal(
-        target_audio.views[AudioView.LONGCAT]["semantic_codes"],
-        torch.tensor([6, 7]),
-    )
-    assert torch.equal(
-        target_audio.views[AudioView.LONGCAT]["acoustic_codes"],
-        torch.tensor([[8, 9]]),
+        target_audio.views[AudioView.LONGCAT],
+        torch.tensor([[6, 8], [7, 9]]),
     )

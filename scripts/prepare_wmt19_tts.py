@@ -12,7 +12,7 @@ import os
 import shutil
 import time
 from collections.abc import Iterable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
 from typing import Any, cast
@@ -22,7 +22,6 @@ from anydataset import AnyDataset, Preset
 from anydataset.dataset import MapStyleABC
 from anydataset.provider.moss_tts import MossTTSProvider
 from anydataset.store import DatasetWriter, ModalityMaterializer
-from anydataset.store.reader import read_store_manifest
 from anydataset.types import (
     AudioItem,
     AudioView,
@@ -36,20 +35,22 @@ from anydataset.types import (
 )
 from anytrain.tts import TTSOptions
 
-from zhuyin.env import context, datasets_home, static_home
+from zhuyin.datasets._wmt19_tts_io import (
+    Stage,
+    is_ready_store,
+    ready_stage,
+    store_sample_count,
+    write_json,
+)
+from zhuyin.datasets._wmt19_tts_io import (
+    stage as new_stage,
+)
+from zhuyin.datasets._wmt19_tts_store import resolve_root
+from zhuyin.datasets.wmt19_tts import WMT19_TTS
+from zhuyin.env import context, static_home
 
-WMT19_TTS = "wmt19_tts"
 TTS_STORE_DIR = "base"
 DEFAULT_TTS_REFERENCE_SECONDS = 8.0
-
-
-@dataclass(frozen=True)
-class Stage:
-    name: str
-    path: str | None
-    reused: bool
-    seconds: float | None
-    sample_count: int | None = None
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -62,7 +63,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         stage = write_tts_store(args)
         summary = {
             "config": run_config(args),
-            "stage": asdict(stage),
+            "stage": stage,
             "seconds": time.perf_counter() - started_at,
         }
         write_json(args.reports_dir / "prepare_tts_summary.json", summary)
@@ -134,10 +135,9 @@ def write_tts_store(args: argparse.Namespace) -> Stage:
         split=args.split,
         max_shard_samples=args.max_shard_samples,
     )
-    stage = Stage(
-        name="tts",
-        path=str(args.tts_store),
-        reused=False,
+    stage = new_stage(
+        "tts",
+        args.tts_store,
         seconds=time.perf_counter() - start,
         sample_count=store_sample_count(args.tts_store),
     )
@@ -282,29 +282,6 @@ def store_dataset(path: Path, split: str) -> AnyDataset:
     return AnyDataset(Spec(source=Source.STORE, path=str(path), split=split))
 
 
-def is_ready_store(path: Path) -> bool:
-    if not path.exists():
-        return False
-    if not (path / ".ready").exists():
-        return False
-    read_store_manifest(path)
-    return True
-
-
-def ready_stage(name: str, path: Path) -> Stage:
-    return Stage(
-        name=name,
-        path=str(path),
-        reused=True,
-        seconds=None,
-        sample_count=store_sample_count(path),
-    )
-
-
-def store_sample_count(path: Path) -> int:
-    return read_store_manifest(path).sample_count
-
-
 def tts_options(args: argparse.Namespace) -> TTSOptions:
     kwargs: dict[str, Any] = {
         "sample_rate": args.tts_sample_rate,
@@ -355,8 +332,7 @@ def inspect_sample(path: Path, split: str) -> dict[str, Any]:
 
 
 def configure_env(args: argparse.Namespace) -> None:
-    args.root = datasets_home() / WMT19_TTS if args.root is None else args.root
-    args.root = args.root.expanduser().resolve()
+    args.root = resolve_root(args.root)
     args.root.mkdir(parents=True, exist_ok=True)
     args.tts_store = args.root / TTS_STORE_DIR
     args.reports_dir = args.root / "reports"
@@ -392,14 +368,6 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         if is_ready_store(args.tts_store)
         else None,
     }
-
-
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
