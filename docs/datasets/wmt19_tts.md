@@ -1,7 +1,7 @@
 # WMT19 TTS
 
 `wmt19_tts()` 返回逻辑 WMT19 zh-en TTS 对象，source/target 两侧包含文本和 waveform。
-`wmt19_tts_codec()` 返回同一数据集的 codec 视图；Stable Codec 和 UniCodec 也提供
+`wmt19_tts_codec()` 返回同一数据集的 codec 视图；DAC、Stable Codec 和 UniCodec 也提供
 不要求调用方传枚举的具名入口。物理来源由 loader 私有选择，不改变逻辑 sample 契约。
 
 目标公开接口：
@@ -11,12 +11,14 @@ from zhuyin.datasets.wmt19_tts import (
     dataset_root,
     wmt19_tts,
     wmt19_tts_codec,
+    wmt19_tts_dac,
     wmt19_tts_stable,
     wmt19_tts_unicodec,
 )
 
 tts = wmt19_tts()
 longcat = wmt19_tts_codec()
+dac = wmt19_tts_dac()
 stable = wmt19_tts_stable()
 unicodec = wmt19_tts_unicodec()
 store = wmt19_tts(root=dataset_root())
@@ -27,10 +29,10 @@ store = wmt19_tts(root=dataset_root())
 - 显式传 `root`：读取该根目录下的标准 store。
 - `root=None`：根据当前 location 和逻辑视图选择默认物理来源。
 - HZ 默认从固定 export 读取 TTS 和 LongCat；这些路径由 WMT19 模块私有管理。
-- Stable Codec 和 UniCodec 没有 HZ export，所有 location 默认读取标准 store。
+- DAC、Stable Codec 和 UniCodec 没有 HZ export，所有 location 默认读取标准 store。
 - 在 HZ 强制读取标准 store 时传 `root=dataset_root()`。
 
-`root` 始终指 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`stable/` 等视图，
+`root` 始终指 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、`stable/` 等视图，
 不指向具体 view 目录。
 
 默认 TTS 入口：
@@ -64,11 +66,13 @@ from zhuyin.datasets.wmt19_tts import (
     Codec,
     dataset_root,
     wmt19_tts_codec,
+    wmt19_tts_dac,
     wmt19_tts_stable,
     wmt19_tts_unicodec,
 )
 
 longcat = wmt19_tts_codec()
+dac = wmt19_tts_dac()
 stable = wmt19_tts_stable()
 unicodec = wmt19_tts_unicodec()
 store_longcat = wmt19_tts_codec(codec=Codec.LONGCAT, root=dataset_root())
@@ -81,8 +85,8 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 ```
 
 这个 notebook 会加载默认数据集、打印长度，并按 index 取具体 sample，检查 source/target
-两侧 audio 的 `AudioView.LONGCAT` keys、`semantic_codes` / `acoustic_codes` shape，并用
-LongCat decoder 还原 source/target 波形供试听。
+两侧 audio 的 `AudioView.LONGCAT` `[frame, codebook]` shape，并用 LongCat decoder
+还原 source/target 波形供试听。
 
 标准 store 需要默认路径且 `STATIC_HOME` 未设置时，`static_home()` 使用 `LOCATION`
 对应默认值并发 warning；`LOCATION` 缺失时会按 `/share5_video`、`/nfs/yin.zhu`、`/mnt`
@@ -130,7 +134,9 @@ jobs/prepare_wmt19_tts.sh \
 ## 准备 LongCat
 
 LongCat 编码脚本消费 `base`，写出供 `wmt19_tts_codec(codec=Codec.LONGCAT)` 读取的
-`longcat` store：
+`longcat` store。标准 store 的 codes 直接使用 anytrain codec 契约定义的
+`[frame, codebook]` 整数 Tensor；HZ 旧 export 的 semantic/acoustic 字段只在 HZ loader
+边界转换。旧的 dict 格式标准 store 不再兼容，需要重新物化：
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
@@ -141,6 +147,25 @@ python scripts/prepare_wmt19_tts_longcat.py
 
 ```bash
 jobs/prepare_wmt19_tts_longcat.sh
+```
+
+## 准备 DAC
+
+DAC 脚本消费 `base`，写出供 `wmt19_tts_dac()` 读取的 `dac` store。该 store 保留
+source/target 文本及语言信息，codes 使用统一的 `[frame, codebook]` 布局。默认使用官方
+`44khz` / `8kbps` checkpoint；`n_quantizers` 在物化前固定，store 内始终保存完整、有序的
+已配置码本。
+
+```bash
+PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
+python scripts/prepare_wmt19_tts_dac.py
+```
+
+离线使用已有 checkpoint 时传 `--local-files-only`，需要其它官方配置时传
+`--model-type`、`--model-bitrate` 或 `--n-quantizers`。可提交任务入口是：
+
+```bash
+jobs/prepare_wmt19_tts_dac.sh
 ```
 
 ## 准备 Stable Codec
@@ -231,7 +256,8 @@ jobs/filter_wmt19_tts_speech_translation.sh
 LongCat 训练契约和 speech-to-speech 保持一致：source 和 target 两侧 audio 都包含
 `AudioView.LONGCAT`，逻辑值统一为 `[frame, codebook]` Tensor，第 0 个 codebook 是
 semantic code，其余 codebook 是 acoustic code。标准 store 的旧物理 dict 在 loader
-边界完成归一化；需要文本或 waveform 时使用 `wmt19_tts()`。
+边界不再转换，需要重新物化为 anytrain 统一 Tensor；需要文本或 waveform 时使用
+`wmt19_tts()`。
 
 ## LongCat BPE
 

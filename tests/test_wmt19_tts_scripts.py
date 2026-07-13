@@ -17,6 +17,7 @@ import filter_wmt19_tts_speech  # noqa: E402
 import filter_wmt19_tts_speech_translation  # noqa: E402
 import filter_wmt19_tts_translation  # noqa: E402
 import prepare_wmt19_tts  # noqa: E402
+import prepare_wmt19_tts_dac  # noqa: E402
 import prepare_wmt19_tts_longcat  # noqa: E402
 
 
@@ -96,6 +97,39 @@ def test_longcat_prepare_parser_uses_batch_size() -> None:
     args = prepare_wmt19_tts_longcat.parse_args(["--batch-size", "8"])
 
     assert args.batch_size == 8
+
+
+def test_dac_prepare_parser_uses_official_defaults() -> None:
+    args = prepare_wmt19_tts_dac.parse_args([])
+
+    assert args.devices == "auto"
+    assert args.model_type == "44khz"
+    assert args.model_bitrate == "8kbps"
+    assert args.tag == "latest"
+    assert args.n_quantizers is None
+    assert args.local_files_only is False
+
+
+def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
+    args = prepare_wmt19_tts_dac.parse_args(
+        [
+            "--dac-cache-dir",
+            str(tmp_path),
+            "--model-type",
+            "24khz",
+            "--model-bitrate",
+            "8kbps",
+            "--n-quantizers",
+            "4",
+            "--local-files-only",
+        ]
+    )
+
+    assert args.dac_cache_dir == tmp_path
+    assert args.model_type == "24khz"
+    assert args.model_bitrate == "8kbps"
+    assert args.n_quantizers == 4
+    assert args.local_files_only is True
 
 
 @pytest.mark.parametrize("option", ["--prefetch-factor", "--resume"])
@@ -227,160 +261,6 @@ def test_speech_translation_filter_parser_rejects_prefetch_factor_alias() -> Non
         filter_wmt19_tts_speech_translation.parse_args(
             ["--translation-prefetch-factor", "4"]
         )
-
-
-def test_longcat_prepare_uses_wmt19_tts_dataset(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-
-    def fake_wmt19_tts(**kwargs: Any) -> list[object]:
-        calls.append(kwargs)
-        return []
-
-    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
-    split = "train"
-    factory = prepare_wmt19_tts_longcat.StoreFactory(None, split)
-
-    assert factory() == []
-    assert calls == [{"split": split}]
-
-
-def test_longcat_prepare_writes_view_materializer_directly(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: dict[str, Any] = {}
-    wmt19_tts_calls: list[dict[str, Any]] = []
-    monkeypatch.setenv("STATIC_HOME", str(tmp_path / "static"))
-    monkeypatch.setenv("DYNAMIC_HOME", str(tmp_path / "dynamic"))
-
-    class FakeDataset:
-        def merge(self, _other: object) -> object:
-            raise AssertionError("LongCat prepare should not merge the base store.")
-
-    class FakeViewMaterializer:
-        def __init__(
-            self,
-            output_dir: Path,
-            *,
-            split: str,
-            max_shard_samples: int,
-            batch_size: int,
-            num_workers: int,
-            prefetch_factor: int | None,
-            write_workers: int,
-            write_prefetch: int | None,
-        ) -> None:
-            calls["init"] = {
-                "output_dir": output_dir,
-                "split": split,
-                "max_shard_samples": max_shard_samples,
-                "batch_size": batch_size,
-                "num_workers": num_workers,
-                "prefetch_factor": prefetch_factor,
-                "write_workers": write_workers,
-                "write_prefetch": write_prefetch,
-            }
-
-        def write(
-            self,
-            *,
-            dataset_factory: Any,
-            provider_factory: Any,
-            devices: str,
-        ) -> Path:
-            calls["write"] = {
-                "dataset": dataset_factory(),
-                "provider_factory": provider_factory,
-                "devices": devices,
-            }
-            return tmp_path / "longcat"
-
-    def fake_wmt19_tts(**kwargs: Any) -> FakeDataset:
-        wmt19_tts_calls.append(kwargs)
-        return FakeDataset()
-
-    monkeypatch.setattr(
-        prepare_wmt19_tts_longcat,
-        "ViewMaterializer",
-        FakeViewMaterializer,
-    )
-    monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
-    monkeypatch.setattr(prepare_wmt19_tts_longcat, "is_ready_store", lambda _path: False)
-    monkeypatch.setattr(
-        prepare_wmt19_tts_longcat,
-        "store_sample_count",
-        lambda _path: 1,
-    )
-
-    args = prepare_wmt19_tts_longcat.parse_args(
-        [
-            "--root",
-            str(tmp_path),
-            "--split",
-            "dev",
-            "--devices",
-            "cpu",
-            "--max-shard-samples",
-            "7",
-            "--batch-size",
-            "3",
-            "--num-workers",
-            "2",
-            "--read-prefetch",
-            "4",
-            "--write-workers",
-            "2",
-            "--write-prefetch",
-            "5",
-        ]
-    )
-    prepare_wmt19_tts_longcat.configure_env(args)
-
-    stage = prepare_wmt19_tts_longcat.write_longcat_store(args)
-
-    assert calls["init"] == {
-        "output_dir": tmp_path / "longcat",
-        "split": "dev",
-        "max_shard_samples": 7,
-        "batch_size": 3,
-        "num_workers": 2,
-        "prefetch_factor": 4,
-        "write_workers": 2,
-        "write_prefetch": 5,
-    }
-    assert calls["write"]["devices"] == "cpu"
-    assert isinstance(
-        calls["write"]["provider_factory"],
-        prepare_wmt19_tts_longcat.LongCatFactory,
-    )
-    assert wmt19_tts_calls == [
-        {
-            "root": tmp_path,
-            "split": "dev",
-        }
-    ]
-    assert stage["path"] == str(tmp_path / "longcat")
-    assert stage["sample_count"] == 1
-
-
-def test_longcat_factory_uses_default_provider_options(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-
-    class FakeProvider:
-        def __init__(self, **kwargs: Any) -> None:
-            calls.append(kwargs)
-
-    monkeypatch.setattr(prepare_wmt19_tts_longcat, "LongCatProvider", FakeProvider)
-
-    provider = prepare_wmt19_tts_longcat.LongCatFactory()("cpu")
-
-    assert isinstance(provider, FakeProvider)
-    assert calls == [{"device": None}]
 
 
 def test_prepare_is_ready_store_exposes_broken_ready_store(tmp_path: Path) -> None:

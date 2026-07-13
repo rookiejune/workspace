@@ -12,7 +12,7 @@ src/zhuyin/
     common_voice.py              # Common Voice 逻辑数据集入口
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
     _wmt19_tts_prepare.py        # prepare 服务
-    _wmt19_tts_codec.py          # Stable Codec / UniCodec view 生成服务
+    _wmt19_tts_codec.py          # LongCat / DAC / Stable Codec / UniCodec view 生成服务
     _wmt19_tts_filter.py         # filter 服务
     _wmt19_tts_bpe.py            # BPE 语料与训练服务
     _wmt19_tts_io.py             # store 状态和报告 IO
@@ -77,6 +77,7 @@ WMT19 TTS 的公开入口不暴露物理 profile：
 dataset_root(root=None) -> Path
 wmt19_tts(*, root=None, split="train")
 wmt19_tts_codec(*, codec=Codec.LONGCAT, root=None, split="train")
+wmt19_tts_dac(*, root=None, split="train")
 wmt19_tts_stable(*, root=None, split="train")
 wmt19_tts_unicodec(*, root=None, split="train")
 ```
@@ -86,10 +87,10 @@ wmt19_tts_unicodec(*, root=None, split="train")
 - 显式 `root` 始终读取标准 store。
 - `root=None` 时，loader 根据当前 location 和请求的逻辑视图选择默认物理来源。
 - HZ 的 TTS 和 LongCat export 路径是 WMT19 模块的私有实现，不进入 `zhuyin.env`。
-- Stable Codec 和 UniCodec 没有 HZ export，默认读取标准 store。
+- DAC、Stable Codec 和 UniCodec 没有 HZ export，默认读取标准 store。
 - 需要在 HZ 强制读取标准 store 时，显式传 `root=dataset_root()`。
 
-`root` 始终表示标准 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`stable/`
+`root` 始终表示标准 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、`stable/`
 等逻辑视图。它不表示具体 view 目录，也不覆盖 HZ export 路径。
 
 ### Tokenizer Artifacts

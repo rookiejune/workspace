@@ -26,6 +26,7 @@ Common wrappers:
 ```bash
 jobs/prepare_wmt19_tts.sh
 jobs/prepare_wmt19_tts_longcat.sh
+jobs/prepare_wmt19_tts_dac.sh
 jobs/prepare_wmt19_tts_stable.sh
 jobs/prepare_wmt19_tts_unicodec.sh
 jobs/filter_wmt19_tts_speech.sh

@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anydataset.provider.codec import CodecProvider
 from anydataset.store import ViewMaterializer
@@ -31,8 +32,56 @@ from zhuyin.datasets._wmt19_tts_io import (
 )
 from zhuyin.datasets._wmt19_tts_store import StoreFactory
 
+if TYPE_CHECKING:
+    from anytrain.codec.dac import ModelBitrate, ModelType
+
+LONGCAT_STORE_DIR = "longcat"
+DAC_STORE_DIR = "dac"
 STABLE_STORE_DIR = "stable"
 UNICODEC_STORE_DIR = "unicodec"
+
+
+class LongCatFactory:
+    def __call__(self, device: str) -> CodecProvider:
+        from anytrain.codec.longcat import LongCat
+
+        codec = LongCat.from_pretrained(
+            device=None if device == "cpu" else device,
+        )
+        return CodecProvider(codec, AudioView.LONGCAT)
+
+
+class DACFactory:
+    def __init__(
+        self,
+        *,
+        cache_dir: Path | None,
+        model_type: ModelType,
+        model_bitrate: ModelBitrate,
+        tag: str,
+        n_quantizers: int | None,
+        local_files_only: bool,
+    ) -> None:
+        self.cache_dir = cache_dir
+        self.model_type = model_type
+        self.model_bitrate = model_bitrate
+        self.tag = tag
+        self.n_quantizers = n_quantizers
+        self.local_files_only = local_files_only
+
+    def __call__(self, device: str) -> CodecProvider:
+        from anytrain.codec.dac import DAC
+
+        codec = DAC.from_pretrained(
+            cache_dir=self.cache_dir,
+            model_type=self.model_type,
+            model_bitrate=self.model_bitrate,
+            tag=self.tag,
+            device=device,
+            n_quantizers=self.n_quantizers,
+            local_files_only=self.local_files_only,
+        )
+        return CodecProvider(codec, AudioView.DAC)
 
 
 class StableCodecFactory:
@@ -89,6 +138,75 @@ class UniCodecFactory:
         return CodecProvider(codec, AudioView.UNICODEC)
 
 
+def prepare_longcat(
+    *,
+    root: Path,
+    split: str,
+    devices: str,
+    max_shard_samples: int,
+    batch_size: int,
+    num_workers: int,
+    read_prefetch: int | None,
+    write_workers: int,
+    write_prefetch: int | None,
+) -> Stage:
+    return _prepare_codec(
+        root=root,
+        split=split,
+        store_dir=LONGCAT_STORE_DIR,
+        provider_factory=LongCatFactory(),
+        keep_text=False,
+        devices=devices,
+        max_shard_samples=max_shard_samples,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        read_prefetch=read_prefetch,
+        write_workers=write_workers,
+        write_prefetch=write_prefetch,
+    )
+
+
+def prepare_dac(
+    *,
+    root: Path,
+    split: str,
+    devices: str,
+    max_shard_samples: int,
+    batch_size: int,
+    num_workers: int,
+    read_prefetch: int | None,
+    write_workers: int,
+    write_prefetch: int | None,
+    cache_dir: Path | None,
+    model_type: ModelType,
+    model_bitrate: ModelBitrate,
+    tag: str,
+    n_quantizers: int | None,
+    local_files_only: bool,
+) -> Stage:
+    return _prepare_codec(
+        root=root,
+        split=split,
+        store_dir=DAC_STORE_DIR,
+        provider_factory=DACFactory(
+            cache_dir=cache_dir,
+            model_type=model_type,
+            model_bitrate=model_bitrate,
+            tag=tag,
+            n_quantizers=n_quantizers,
+            local_files_only=local_files_only,
+        ),
+        keep_text=True,
+        devices=devices,
+        max_shard_samples=max_shard_samples,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        read_prefetch=read_prefetch,
+        write_workers=write_workers,
+        write_prefetch=write_prefetch,
+    )
+
+
 def prepare_stable_codec(
     *,
     root: Path,
@@ -115,6 +233,7 @@ def prepare_stable_codec(
             posthoc_bottleneck=posthoc_bottleneck,
             normalize=normalize,
         ),
+        keep_text=True,
         devices=devices,
         max_shard_samples=max_shard_samples,
         batch_size=batch_size,
@@ -151,6 +270,7 @@ def prepare_unicodec(
             bandwidth_id=bandwidth_id,
             local_files_only=local_files_only,
         ),
+        keep_text=True,
         devices=devices,
         max_shard_samples=max_shard_samples,
         batch_size=batch_size,
@@ -167,6 +287,7 @@ def _prepare_codec(
     split: str,
     store_dir: str,
     provider_factory: Callable[[str], CodecProvider],
+    keep_text: bool,
     devices: str,
     max_shard_samples: int,
     batch_size: int,
@@ -189,7 +310,7 @@ def _prepare_codec(
         prefetch_factor=read_prefetch,
         write_workers=write_workers,
         write_prefetch=write_prefetch,
-        keep_schema=_text_schema(),
+        keep_schema=_text_schema() if keep_text else None,
     ).write(
         dataset_factory=StoreFactory(root, split),
         provider_factory=provider_factory,
@@ -215,10 +336,16 @@ def _text_schema():
 
 
 __all__ = [
+    "DAC_STORE_DIR",
+    "LONGCAT_STORE_DIR",
     "STABLE_STORE_DIR",
     "UNICODEC_STORE_DIR",
+    "DACFactory",
+    "LongCatFactory",
     "StableCodecFactory",
     "UniCodecFactory",
+    "prepare_dac",
+    "prepare_longcat",
     "prepare_stable_codec",
     "prepare_unicodec",
 ]

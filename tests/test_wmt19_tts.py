@@ -106,24 +106,29 @@ def test_wmt19_tts_codec_longcat_uses_longcat_store(
     }
 
 
-def test_longcat_store_transform_normalizes_the_logical_view() -> None:
+def test_longcat_store_transform_accepts_anytrain_codes() -> None:
     item = module.AudioItem(
-        views={
-            AudioView.LONGCAT: {
-                "semantic_codes": torch.tensor([1, 2, 3]),
-                "acoustic_codes": torch.tensor([[4, 5]]),
-            }
-        },
+        views={AudioView.LONGCAT: torch.tensor([[1, 4], [2, 5]])},
         meta={"speaker": "test"},
     )
 
     transformed = module._longcat_item(item)
 
-    assert torch.equal(
-        transformed.views[AudioView.LONGCAT],
-        torch.tensor([[1, 4], [2, 5]]),
+    assert transformed is item
+
+
+def test_longcat_store_transform_rejects_legacy_codes() -> None:
+    item = module.AudioItem(
+        views={
+            AudioView.LONGCAT: {
+                "semantic_codes": torch.tensor([1, 2]),
+                "acoustic_codes": torch.tensor([[3, 4]]),
+            }
+        }
     )
-    assert transformed.meta == item.meta
+
+    with pytest.raises(TypeError, match="rematerialize"):
+        module._longcat_item(item)
 
 
 def test_wmt19_tts_codec_longcat_explicit_root_selects_store_on_hz(
@@ -172,6 +177,21 @@ def test_wmt19_tts_codec_stable_uses_stable_store(
     assert dataset.merged is None
 
 
+def test_wmt19_tts_codec_dac_uses_store_on_hz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LOCATION", "hz")
+    monkeypatch.setenv("STATIC_HOME", "/data/static")
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_codec(codec=module.Codec.DAC, split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/dac"
+    assert dataset.spec.split == "dev"
+    assert dataset.merged is None
+
+
 def test_wmt19_tts_codec_unicodec_uses_store_on_hz(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -212,6 +232,18 @@ def test_wmt19_tts_stable_uses_named_codec_entry(
 
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/wmt19/stable"
+    assert dataset.spec.split == "dev"
+
+
+def test_wmt19_tts_dac_uses_named_codec_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_dac(root="/data/wmt19", split="dev")
+
+    assert dataset.spec.source == Source.STORE
+    assert dataset.spec.path == "/data/wmt19/dac"
     assert dataset.spec.split == "dev"
 
 

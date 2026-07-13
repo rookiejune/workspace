@@ -48,6 +48,7 @@ class Codec(StrEnum):
     """Codec view selected by `wmt19_tts_codec()`; values match store dirs."""
 
     LONGCAT = auto()
+    DAC = auto()
     STABLE = auto()
     UNICODEC = auto()
 
@@ -90,9 +91,7 @@ def wmt19_tts_codec(
             root=root,
             split=split,
             merge_base=resolved_codec is Codec.LONGCAT,
-            transforms=_longcat_transforms()
-            if resolved_codec is Codec.LONGCAT
-            else None,
+            transforms=_longcat_transforms() if resolved_codec is Codec.LONGCAT else None,
         )
     return AnyDataset(
         Spec(source=Source.HF_DISK, path=str(_HZ_LONGCAT_ROOT), split=split),
@@ -108,6 +107,16 @@ def wmt19_tts_stable(
     """Return the Stable Codec view of WMT19 zh-en TTS."""
 
     return wmt19_tts_codec(codec=Codec.STABLE, root=root, split=split)
+
+
+def wmt19_tts_dac(
+    *,
+    root: str | PathLike[str] | None = None,
+    split: str = "train",
+) -> AnyDataset:
+    """Return the Descript Audio Codec view of WMT19 zh-en TTS."""
+
+    return wmt19_tts_codec(codec=Codec.DAC, root=root, split=split)
 
 
 def wmt19_tts_unicodec(
@@ -232,17 +241,19 @@ def _longcat_transforms():
 
 
 def _longcat_item(item: AudioItem) -> AudioItem:
+    import torch
+
     value = item.views[AudioView.LONGCAT]
-    if not isinstance(value, dict):
-        raise TypeError("stored LongCat view must contain semantic and acoustic codes.")
-    codes = _longcat_codes(
-        semantic_codes=_tensor(value["semantic_codes"]),
-        acoustic_codes=_tensor(value["acoustic_codes"]),
-    )
-    return AudioItem(
-        views={**item.views, AudioView.LONGCAT: codes},
-        meta=item.meta,
-    )
+    if not isinstance(value, torch.Tensor):
+        raise TypeError(
+            "stored LongCat view must use the anytrain [frame, codebook] Tensor "
+            "contract; rematerialize the longcat store."
+        )
+    if value.ndim != 2:
+        raise ValueError("stored LongCat codes must have shape [frame, codebook].")
+    if value.dtype == torch.bool or value.is_floating_point() or value.is_complex():
+        raise TypeError("stored LongCat codes must contain integer ids.")
+    return item
 
 
 def _longcat_codes(
