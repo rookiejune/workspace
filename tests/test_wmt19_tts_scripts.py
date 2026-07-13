@@ -17,7 +17,7 @@ import filter_wmt19_tts_speech  # noqa: E402
 import filter_wmt19_tts_speech_translation  # noqa: E402
 import filter_wmt19_tts_translation  # noqa: E402
 import prepare_wmt19_tts  # noqa: E402
-import prepare_wmt19_tts_dac  # noqa: E402
+import prepare_wmt19_tts_codec  # noqa: E402
 import prepare_wmt19_tts_longcat  # noqa: E402
 
 
@@ -100,7 +100,7 @@ def test_longcat_prepare_parser_uses_batch_size() -> None:
 
 
 def test_dac_prepare_parser_uses_official_defaults() -> None:
-    args = prepare_wmt19_tts_dac.parse_args([])
+    args = prepare_wmt19_tts_codec.parse_args(["dac"])
 
     assert args.devices == "auto"
     assert args.model_type == "44khz"
@@ -111,8 +111,9 @@ def test_dac_prepare_parser_uses_official_defaults() -> None:
 
 
 def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
-    args = prepare_wmt19_tts_dac.parse_args(
+    args = prepare_wmt19_tts_codec.parse_args(
         [
+            "dac",
             "--dac-cache-dir",
             str(tmp_path),
             "--model-type",
@@ -130,6 +131,30 @@ def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
     assert args.model_bitrate == "8kbps"
     assert args.n_quantizers == 4
     assert args.local_files_only is True
+
+
+def test_codec_prepare_parser_requires_codec() -> None:
+    with pytest.raises(SystemExit):
+        prepare_wmt19_tts_codec.parse_args([])
+
+
+def test_codec_prepare_parser_rejects_other_codec_options() -> None:
+    with pytest.raises(SystemExit):
+        prepare_wmt19_tts_codec.parse_args(["unicodec", "--model-type", "44khz"])
+
+
+def test_unicodec_prepare_dispatches_codec_configuration(tmp_path: Path) -> None:
+    args = prepare_wmt19_tts_codec.parse_args(
+        ["unicodec", "--unicodec-cache-dir", str(tmp_path), "--bandwidth-id", "2"]
+    )
+
+    config = prepare_wmt19_tts_codec.prepare_config(args)
+
+    assert args.prepare is prepare_wmt19_tts_codec.prepare_unicodec
+    assert config["cache_dir"] == tmp_path
+    assert config["domain"] == "0"
+    assert config["bandwidth_id"] == 2
+    assert "unicodec_cache_dir" not in config
 
 
 @pytest.mark.parametrize("option", ["--prefetch-factor", "--resume"])

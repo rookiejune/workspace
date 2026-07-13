@@ -158,7 +158,7 @@ source/target 文本及语言信息，codes 使用统一的 `[frame, codebook]` 
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
-python scripts/prepare_wmt19_tts_dac.py
+python scripts/prepare_wmt19_tts_codec.py dac
 ```
 
 离线使用已有 checkpoint 时传 `--local-files-only`，需要其它官方配置时传
@@ -176,7 +176,7 @@ Stable Codec 脚本消费 `base`，写出供 `wmt19_tts_stable()` 读取的 `sta
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
-python scripts/prepare_wmt19_tts_stable.py
+python scripts/prepare_wmt19_tts_codec.py stable
 ```
 
 可提交任务入口是：
@@ -193,7 +193,7 @@ UniCodec 脚本消费 `base`，写出供 `wmt19_tts_unicodec()` 读取的 `unico
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
-python scripts/prepare_wmt19_tts_unicodec.py
+python scripts/prepare_wmt19_tts_codec.py unicodec
 ```
 
 可提交任务入口是：
