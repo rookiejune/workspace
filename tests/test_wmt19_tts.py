@@ -172,7 +172,7 @@ def test_wmt19_tts_codec_stable_uses_stable_store(
     dataset = module.wmt19_tts_codec(codec=module.Codec.STABLE, split="dev")
 
     assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/static/datasets/wmt19_tts/stable"
+    assert dataset.spec.path == ("/data/static/datasets/wmt19_tts/stable-1x46656_400bps")
     assert dataset.spec.split == "dev"
     assert dataset.merged is None
 
@@ -219,7 +219,7 @@ def test_wmt19_tts_codec_stable_explicit_root(
         split="train",
     )
 
-    assert dataset.spec.path == str(tmp_path / "wmt19" / "stable")
+    assert dataset.spec.path == str(tmp_path / "wmt19" / "stable-1x46656_400bps")
     assert dataset.merged is None
 
 
@@ -231,8 +231,21 @@ def test_wmt19_tts_stable_uses_named_codec_entry(
     dataset = module.wmt19_tts_stable(root="/data/wmt19", split="dev")
 
     assert dataset.spec.source == Source.STORE
-    assert dataset.spec.path == "/data/wmt19/stable"
+    assert dataset.spec.path == "/data/wmt19/stable-1x46656_400bps"
     assert dataset.spec.split == "dev"
+
+
+def test_wmt19_tts_stable_selects_quantizer_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "AnyDataset", BuiltDataset)
+
+    dataset = module.wmt19_tts_stable(
+        root="/data/wmt19",
+        quantizer=module.StableQuantizer.FSQ_2X15625_700BPS,
+    )
+
+    assert dataset.spec.path == "/data/wmt19/stable-2x15625_700bps"
 
 
 def test_wmt19_tts_dac_uses_named_codec_entry(

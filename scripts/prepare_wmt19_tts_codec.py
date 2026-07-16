@@ -15,6 +15,10 @@ from zhuyin.datasets._wmt19_tts_codec import (
     prepare_unicodec,
 )
 from zhuyin.datasets._wmt19_tts_io import Stage, write_json
+from zhuyin.datasets._wmt19_tts_stable import (
+    DEFAULT_STABLE_QUANTIZER,
+    StableQuantizer,
+)
 from zhuyin.datasets._wmt19_tts_store import resolve_root
 from zhuyin.env import context
 
@@ -34,7 +38,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             "seconds": time.perf_counter() - started_at,
         }
         write_json(
-            args.root / "reports" / f"prepare_{args.codec}_summary.json",
+            args.root / "reports" / f"prepare_{stage['name']}_summary.json",
             summary,
         )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
@@ -62,6 +66,8 @@ def run_config(args: argparse.Namespace) -> dict[str, object]:
     for key, value in config.items():
         if isinstance(value, Path):
             config[key] = str(value)
+        elif isinstance(value, StableQuantizer):
+            config[key] = value.value
     config.update(codec=args.codec, keep_text=True, resume=True)
     return config
 
@@ -85,7 +91,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     stable.add_argument("--version", default="speech-16k")
     stable.add_argument("--pretrained-model")
-    stable.add_argument("--posthoc-bottleneck")
+    stable.add_argument(
+        "--posthoc-bottleneck",
+        type=StableQuantizer,
+        choices=tuple(StableQuantizer),
+        default=DEFAULT_STABLE_QUANTIZER,
+    )
     stable.add_argument(
         "--normalize", action=argparse.BooleanOptionalAction, default=True
     )

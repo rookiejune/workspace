@@ -133,6 +133,33 @@ def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
     assert args.local_files_only is True
 
 
+def test_stable_prepare_parser_uses_constrained_default() -> None:
+    args = prepare_wmt19_tts_codec.parse_args(["stable"])
+
+    assert args.posthoc_bottleneck.value == "1x46656_400bps"
+    assert prepare_wmt19_tts_codec.prepare_config(args)["posthoc_bottleneck"] is (
+        args.posthoc_bottleneck
+    )
+    assert prepare_wmt19_tts_codec.run_config(args)["posthoc_bottleneck"] == (
+        "1x46656_400bps"
+    )
+
+
+def test_stable_prepare_parser_accepts_supported_posthoc_preset() -> None:
+    args = prepare_wmt19_tts_codec.parse_args(
+        ["stable", "--posthoc-bottleneck", "4x729_1000bps"]
+    )
+
+    assert args.posthoc_bottleneck.value == "4x729_1000bps"
+
+
+def test_stable_prepare_parser_rejects_native_codes() -> None:
+    with pytest.raises(SystemExit):
+        prepare_wmt19_tts_codec.parse_args(
+            ["stable", "--posthoc-bottleneck", "native"]
+        )
+
+
 def test_codec_prepare_parser_requires_codec() -> None:
     with pytest.raises(SystemExit):
         prepare_wmt19_tts_codec.parse_args([])

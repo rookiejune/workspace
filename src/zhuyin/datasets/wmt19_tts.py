@@ -30,6 +30,13 @@ from anydataset.types import (
 )
 
 from zhuyin._compat import StrEnum
+from zhuyin.datasets._wmt19_tts_stable import (
+    DEFAULT_STABLE_QUANTIZER,
+    StableQuantizer,
+)
+from zhuyin.datasets._wmt19_tts_stable import (
+    store_dir as _stable_store_dir,
+)
 from zhuyin.env import Location, datasets_home, location
 
 if TYPE_CHECKING:
@@ -45,7 +52,7 @@ _HZ_LONGCAT_ROOT = (
 
 
 class Codec(StrEnum):
-    """Codec view selected by `wmt19_tts_codec()`; values match store dirs."""
+    """Logical codec view selected by `wmt19_tts_codec()`."""
 
     LONGCAT = auto()
     DAC = auto()
@@ -86,8 +93,9 @@ def wmt19_tts_codec(
 
     resolved_codec = Codec(codec)
     if root is not None or resolved_codec is not Codec.LONGCAT or location() is not Location.HZ:
+        store_dir = _stable_store_dir() if resolved_codec is Codec.STABLE else resolved_codec.value
         return _store_view(
-            store_dir=resolved_codec.value,
+            store_dir=store_dir,
             root=root,
             split=split,
             merge_base=resolved_codec is Codec.LONGCAT,
@@ -103,10 +111,15 @@ def wmt19_tts_stable(
     *,
     root: str | PathLike[str] | None = None,
     split: str = "train",
+    quantizer: StableQuantizer | str = DEFAULT_STABLE_QUANTIZER,
 ) -> AnyDataset:
-    """Return the Stable Codec view of WMT19 zh-en TTS."""
+    """Return one posthoc-quantized Stable Codec view of WMT19 zh-en TTS."""
 
-    return wmt19_tts_codec(codec=Codec.STABLE, root=root, split=split)
+    return _store_view(
+        store_dir=_stable_store_dir(quantizer),
+        root=root,
+        split=split,
+    )
 
 
 def wmt19_tts_dac(

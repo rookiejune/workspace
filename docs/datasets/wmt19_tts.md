@@ -8,6 +8,8 @@
 
 ```python
 from zhuyin.datasets.wmt19_tts import (
+    DEFAULT_STABLE_QUANTIZER,
+    StableQuantizer,
     dataset_root,
     wmt19_tts,
     wmt19_tts_codec,
@@ -32,8 +34,9 @@ store = wmt19_tts(root=dataset_root())
 - DAC、Stable Codec 和 UniCodec 没有 HZ export，所有 location 默认读取标准 store。
 - 在 HZ 强制读取标准 store 时传 `root=dataset_root()`。
 
-`root` 始终指 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、`stable/` 等视图，
-不指向具体 view 目录。
+`root` 始终指 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、
+`stable-1x46656_400bps/` 等视图，不指向具体 view 目录。Stable Codec 视图的
+目录名始终包含 quantizer preset。
 
 默认 TTS 入口：
 
@@ -170,14 +173,36 @@ jobs/prepare_wmt19_tts_dac.sh
 
 ## 准备 Stable Codec
 
-Stable Codec 脚本消费 `base`，写出供 `wmt19_tts_stable()` 读取的 `stable` store。
-该 store 保留 source/target 文本及语言信息，并增加
-`AudioView.STABLE`；它不依赖 HZ 专用 export。
+Stable Codec 脚本消费 `base`，默认使用 posthoc FSQ preset
+`1x46656_400bps`，写出供 `wmt19_tts_stable()` 读取的
+`stable-1x46656_400bps` store。该 store 保留 source/target 文本及语言信息，
+并增加 `AudioView.STABLE`；它不依赖 HZ 专用 export。
 
 ```bash
 PYTHONPATH=src:../third_party/anydataset/src:../third_party/anytrain/src \
 python scripts/prepare_wmt19_tts_codec.py stable
 ```
+
+支持的其他 posthoc preset 可通过 `--posthoc-bottleneck` 显式选择，每个 preset
+使用独立 sibling store：
+
+```bash
+python scripts/prepare_wmt19_tts_codec.py stable \
+  --posthoc-bottleneck 2x15625_700bps
+```
+
+对应的非默认视图通过具名 loader 选择：
+
+```python
+stable_700bps = wmt19_tts_stable(
+    quantizer=StableQuantizer.FSQ_2X15625_700BPS,
+)
+```
+
+旧 `stable/` 目录使用训练期 native FSQ `17^6 = 24,137,569`，它有量化约束，但没有
+应用目标 posthoc preset。新 prepare 的 ready 检查和 loader 不会复用该产物；需要
+用新 preset 重新物化。summary 文件同样包含 store identity，默认为
+`reports/prepare_stable-1x46656_400bps_summary.json`。
 
 可提交任务入口是：
 

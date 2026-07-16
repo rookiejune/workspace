@@ -48,6 +48,11 @@ script also uses `--root` for its input dataset and keeps its output location on
 the separate `--bpe-root` axis. Wrappers do not translate these options or add
 compatibility aliases.
 
+The Stable Codec wrapper explicitly selects the default posthoc preset
+`1x46656_400bps`; its output is `stable-1x46656_400bps/`, never the legacy native-FSQ
+`stable/` store. A later `--posthoc-bottleneck` argument in `"$@"` selects another
+supported preset and therefore another preset-named sibling store.
+
 The LongCat BPE wrapper writes to `--bpe-root` when it is explicit, otherwise to
 `$BPE_CACHE_DIR`, which defaults to `$STATIC_HOME/bpe` inside Python. The default
 BPE vocab size is 100k; `codes_8192` in the artifact name records the LongCat

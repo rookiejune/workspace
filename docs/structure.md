@@ -13,6 +13,7 @@ src/zhuyin/
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
     _wmt19_tts_prepare.py        # prepare 服务
     _wmt19_tts_codec.py          # LongCat / DAC / Stable Codec / UniCodec view 生成服务
+    _wmt19_tts_stable.py         # Stable Codec quantizer preset 与 store identity
     _wmt19_tts_filter.py         # filter 服务
     _wmt19_tts_bpe.py            # BPE 语料与训练服务
     _wmt19_tts_io.py             # store 状态和报告 IO
@@ -78,7 +79,7 @@ dataset_root(root=None) -> Path
 wmt19_tts(*, root=None, split="train")
 wmt19_tts_codec(*, codec=Codec.LONGCAT, root=None, split="train")
 wmt19_tts_dac(*, root=None, split="train")
-wmt19_tts_stable(*, root=None, split="train")
+wmt19_tts_stable(*, root=None, split="train", quantizer=DEFAULT_STABLE_QUANTIZER)
 wmt19_tts_unicodec(*, root=None, split="train")
 ```
 
@@ -90,8 +91,10 @@ wmt19_tts_unicodec(*, root=None, split="train")
 - DAC、Stable Codec 和 UniCodec 没有 HZ export，默认读取标准 store。
 - 需要在 HZ 强制读取标准 store 时，显式传 `root=dataset_root()`。
 
-`root` 始终表示标准 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、`stable/`
-等逻辑视图。它不表示具体 view 目录，也不覆盖 HZ export 路径。
+`root` 始终表示标准 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、
+`stable-1x46656_400bps/` 等逻辑视图。Stable Codec 的目录名包含 posthoc
+quantizer preset；旧 `stable/` native-FSQ store 不在公开 loader 的兼容范围内。`root` 不表示
+具体 view 目录，也不覆盖 HZ export 路径。
 
 ### Tokenizer Artifacts
 

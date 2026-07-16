@@ -6,6 +6,7 @@ from typing import Any
 from anydataset.types import AudioView, Modality, Role, TextMeta, TextView
 
 from zhuyin.datasets import _wmt19_tts_codec as service
+from zhuyin.datasets import _wmt19_tts_stable as stable
 from zhuyin.datasets import _wmt19_tts_store as store
 
 
@@ -190,7 +191,11 @@ def test_prepare_stable_codec_keeps_source_and_target_text(
             calls["write"] = kwargs
 
     monkeypatch.setattr(service, "ViewMaterializer", FakeMaterializer)
-    monkeypatch.setattr(service, "is_ready_store", lambda _path: False)
+    monkeypatch.setattr(
+        service,
+        "is_ready_store",
+        lambda path: path == tmp_path / "stable",
+    )
     monkeypatch.setattr(service, "store_sample_count", lambda _path: 7)
     monkeypatch.setattr(store, "wmt19_tts", lambda **kwargs: kwargs)
 
@@ -206,11 +211,11 @@ def test_prepare_stable_codec_keeps_source_and_target_text(
         write_prefetch=2,
         version="speech-16k",
         pretrained_model=None,
-        posthoc_bottleneck=None,
+        posthoc_bottleneck=stable.DEFAULT_STABLE_QUANTIZER,
         normalize=True,
     )
 
-    assert calls["output"] == tmp_path / "stable"
+    assert calls["output"] == tmp_path / "stable-1x46656_400bps"
     schema = calls["init"]["keep_schema"]
     assert set(schema) == {
         (Role.SOURCE, Modality.TEXT),
@@ -225,8 +230,61 @@ def test_prepare_stable_codec_keeps_source_and_target_text(
     }
     assert isinstance(calls["write"]["provider_factory"], service.StableCodecFactory)
     assert calls["write"]["devices"] == "cuda:0"
-    assert stage["path"] == str(tmp_path / "stable")
+    assert stage["path"] == str(tmp_path / "stable-1x46656_400bps")
     assert stage["sample_count"] == 7
+
+
+def test_stable_factory_identity_and_pretrained_configuration(monkeypatch) -> None:
+    from anytrain.codec import stable_codec
+
+    calls: list[dict[str, Any]] = []
+
+    class FakeStableCodec:
+        @classmethod
+        def from_pretrained(cls, **kwargs: Any) -> object:
+            calls.append(kwargs)
+            return object()
+
+    class FakeProvider:
+        def __init__(self, codec: object, output: AudioView) -> None:
+            self.codec = codec
+            self.output = output
+
+    monkeypatch.setattr(stable_codec, "StableCodec", FakeStableCodec)
+    monkeypatch.setattr(service, "CodecProvider", FakeProvider)
+    factory = service.StableCodecFactory(
+        version="speech-16k-base",
+        pretrained_model="local/stable",
+        posthoc_bottleneck=stable.StableQuantizer.FSQ_2X15625_700BPS,
+        normalize=False,
+    )
+
+    provider = factory("cuda:1")
+
+    assert isinstance(provider, FakeProvider)
+    assert provider.output is AudioView.STABLE
+    assert calls == [
+        {
+            "version": "speech-16k-base",
+            "pretrained_model": "local/stable",
+            "device": "cuda:1",
+            "posthoc_bottleneck": "2x15625_700bps",
+            "normalize": False,
+        }
+    ]
+    assert repr(factory) == (
+        "StableCodecFactory(version='speech-16k-base', "
+        "pretrained_model='local/stable', "
+        "posthoc_bottleneck='2x15625_700bps', normalize=False)"
+    )
+
+
+def test_stable_store_identity_tracks_quantizer() -> None:
+    assert stable.store_dir() == "stable-1x46656_400bps"
+    assert (
+        stable.store_dir(stable.StableQuantizer.FSQ_4X729_1000BPS)
+        == "stable-4x729_1000bps"
+    )
 
 
 def test_prepare_unicodec_keeps_source_and_target_text(

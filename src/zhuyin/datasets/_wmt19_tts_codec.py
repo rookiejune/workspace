@@ -30,6 +30,13 @@ from zhuyin.datasets._wmt19_tts_io import (
     stage,
     store_sample_count,
 )
+from zhuyin.datasets._wmt19_tts_stable import (
+    DEFAULT_STABLE_QUANTIZER,
+    StableQuantizer,
+)
+from zhuyin.datasets._wmt19_tts_stable import (
+    store_dir as stable_store_dir,
+)
 from zhuyin.datasets._wmt19_tts_store import StoreFactory
 
 if TYPE_CHECKING:
@@ -37,7 +44,7 @@ if TYPE_CHECKING:
 
 LONGCAT_STORE_DIR = "longcat"
 DAC_STORE_DIR = "dac"
-STABLE_STORE_DIR = "stable"
+STABLE_STORE_DIR = stable_store_dir()
 UNICODEC_STORE_DIR = "unicodec"
 
 
@@ -90,13 +97,22 @@ class StableCodecFactory:
         *,
         version: str,
         pretrained_model: str | None,
-        posthoc_bottleneck: str | None,
+        posthoc_bottleneck: StableQuantizer,
         normalize: bool,
     ) -> None:
         self.version = version
         self.pretrained_model = pretrained_model
         self.posthoc_bottleneck = posthoc_bottleneck
         self.normalize = normalize
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"version={self.version!r}, "
+            f"pretrained_model={self.pretrained_model!r}, "
+            f"posthoc_bottleneck={self.posthoc_bottleneck.value!r}, "
+            f"normalize={self.normalize!r})"
+        )
 
     def __call__(self, device: str) -> CodecProvider:
         from anytrain.codec.stable_codec import StableCodec
@@ -105,7 +121,7 @@ class StableCodecFactory:
             version=self.version,
             pretrained_model=self.pretrained_model,
             device=device,
-            posthoc_bottleneck=self.posthoc_bottleneck,
+            posthoc_bottleneck=self.posthoc_bottleneck.value,
             normalize=self.normalize,
         )
         return CodecProvider(codec, AudioView.STABLE)
@@ -220,13 +236,13 @@ def prepare_stable_codec(
     write_prefetch: int | None,
     version: str,
     pretrained_model: str | None,
-    posthoc_bottleneck: str | None,
+    posthoc_bottleneck: StableQuantizer = DEFAULT_STABLE_QUANTIZER,
     normalize: bool,
 ) -> Stage:
     return _prepare_codec(
         root=root,
         split=split,
-        store_dir=STABLE_STORE_DIR,
+        store_dir=stable_store_dir(posthoc_bottleneck),
         provider_factory=StableCodecFactory(
             version=version,
             pretrained_model=pretrained_model,
