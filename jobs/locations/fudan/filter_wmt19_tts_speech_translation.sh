@@ -5,6 +5,4 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 cd "$WORKSPACE_ROOT"
 
-"${STABLE_CODEC_PYTHON:-python}" scripts/prepare_wmt19_tts_codec.py stable \
-  --posthoc-bottleneck 1x46656_400bps \
-  "$@"
+"$WORKSPACE_PYTHON" scripts/filter_wmt19_tts.py speech-translation "$@"

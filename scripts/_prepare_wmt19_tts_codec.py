@@ -162,7 +162,3 @@ def unicodec_config(args: argparse.Namespace) -> dict[str, object]:
         "bandwidth_id": args.bandwidth_id,
         "local_files_only": args.local_files_only,
     }
-
-
-if __name__ == "__main__":
-    main()

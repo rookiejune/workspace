@@ -1,65 +1,70 @@
 # Workspace Jobs
 
-`env.sh` locates this repository, prepends the local `PYTHONPATH`, and exports
-the workspace machine homes resolved by `zhuyin.env`: `LOCATION`, `STATIC_HOME`,
-and `DYNAMIC_HOME`. Job wrappers source this file once, then derive project train
-roots from `$DYNAMIC_HOME/train/<project>`. Job submission should first enter the
-intended Python environment and then run the wrapper directly.
+`scripts/` contains the location-neutral Python entry points. WMT19 TTS prepare
+work is split into three public entries: TTS waveform materialization
+(`scripts/prepare_wmt19_tts.py`), codec-view materialization
+(`scripts/prepare_wmt19_tts_codec_view.py`), and BPE training
+(`scripts/prepare_wmt19_tts_bpe.py`). Jobs select subcommands where needed and
+supply concrete launch defaults. `jobs/` contains
+shell launchers grouped by location; wrappers may set machine paths, Python
+interpreters, devices, and submission defaults before calling the shared
+script.
 
-Common variables:
+Common environment:
 
 | Variable | Meaning |
 | --- | --- |
 | `WORKSPACE_ROOT` | The `workspace/` project root. |
-| `REPOS_ROOT` | Parent directory containing `workspace/`, `third_party/`, and experiment repos. |
-| `LOCATION` | Resolved machine profile (`fudan`, `hz`, or `us`). |
+| `REPOS_ROOT` | Parent directory containing `workspace/`, `third_party`, and experiment repos. |
+| `LOCATION` | Resolved machine profile; currently only `fudan` has workspace defaults. |
 | `STATIC_HOME` | Resolved stable asset root. |
 | `DYNAMIC_HOME` | Resolved training/debug output root. |
 | `PYTHONPATH` | Prepends `workspace/src` and required `third_party` packages. |
 
-Machine presets such as `LOCATION=us`, `LOCATION=hz` and `LOCATION=fudan` are
-resolved by `zhuyin.env` while sourcing `env.sh`. If `LOCATION` is unset, Python
-detects the first available marker in this order: `/share5_video`, `/nfs/yin.zhu`,
-`/mnt`. Explicit `STATIC_HOME` or `DYNAMIC_HOME` still override those defaults.
+Root `jobs/env.sh` only resolves the shared workspace environment. Location
+wrappers source their own `jobs/locations/<location>/env.sh`, which pins the
+location and then sources the root env. Do not put location-specific launch
+defaults in `scripts/`.
 
-Common wrappers:
+Implemented Fudan wrappers:
 
 ```bash
-jobs/prepare_wmt19_tts.sh
-jobs/prepare_wmt19_tts_longcat.sh
-jobs/prepare_wmt19_tts_dac.sh
-jobs/prepare_wmt19_tts_stable.sh
-jobs/prepare_wmt19_tts_unicodec.sh
-jobs/filter_wmt19_tts_speech.sh
-jobs/filter_wmt19_tts_translation.sh
-jobs/filter_wmt19_tts_speech_translation.sh
-jobs/prepare_wmt19_tts_longcat_bpe.sh
+jobs/locations/fudan/prepare_wmt19_tts.sh
+jobs/locations/fudan/prepare_wmt19_tts_chunks_500k.sh
+jobs/locations/fudan/prepare_wmt19_tts_longcat.sh
+jobs/locations/fudan/prepare_wmt19_tts_dac.sh
+jobs/locations/fudan/prepare_wmt19_tts_stable.sh
+jobs/locations/fudan/prepare_wmt19_tts_unicodec.sh
+jobs/locations/fudan/filter_wmt19_tts_speech.sh
+jobs/locations/fudan/filter_wmt19_tts_translation.sh
+jobs/locations/fudan/filter_wmt19_tts_speech_translation.sh
+jobs/locations/fudan/prepare_wmt19_tts_longcat_bpe.sh
 ```
+
+`jobs/locations/hz/` and `jobs/locations/us/` are placeholders. Add wrappers
+there only when the matching `src/zhuyin/_locations/<location>.py` profile and
+any required loader source/tests are implemented in the same change.
 
 Target CLI path contract:
 
 | Option | Meaning |
 | --- | --- |
-| `--root` | WMT19 TTS dataset root containing `base/`, `longcat/`, and other views. |
+| `--root` | WMT19 TTS dataset root containing `base/`, `longcat`, and other views. |
 | `--bpe-root` | BPE artifact root; defaults to `$BPE_CACHE_DIR`, then `$STATIC_HOME/bpe`. |
 | `--split` | Logical dataset split, defaulting to `train`. |
 
-All WMT19 prepare and filter scripts use `--root` with the same meaning. The BPE
-script also uses `--root` for its input dataset and keeps its output location on
-the separate `--bpe-root` axis. Wrappers do not translate these options or add
-compatibility aliases.
+All WMT19 prepare and filter scripts use `--root` with the same meaning. The
+BPE script also uses `--root` for its input dataset and keeps output on the
+separate `--bpe-root` axis.
 
-The Stable Codec wrapper explicitly selects the default posthoc preset
-`1x46656_400bps`; its output is `stable-1x46656_400bps/`, never the legacy native-FSQ
-`stable/` store. A later `--posthoc-bottleneck` argument in `"$@"` selects another
-supported preset and therefore another preset-named sibling store.
+The Stable Codec Fudan wrapper selects the default posthoc preset
+`1x46656_400bps`; its output is `stable-1x46656_400bps/`, never the legacy
+native-FSQ `stable/` store. A later `--posthoc-bottleneck` argument in `"$@"`
+selects another supported preset and therefore another preset-named sibling
+store.
 
-The LongCat BPE wrapper writes to `--bpe-root` when it is explicit, otherwise to
-`$BPE_CACHE_DIR`, which defaults to `$STATIC_HOME/bpe` inside Python. The default
-BPE vocab size is 100k; `codes_8192` in the artifact name records the LongCat
-semantic codebook size, not the target BPE vocab size. Debug runs can keep their
-own artifact names by limiting the number of samples:
+Debug BPE runs can keep their own artifact names by limiting samples:
 
 ```bash
-jobs/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000
+jobs/locations/fudan/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000
 ```

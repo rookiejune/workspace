@@ -42,10 +42,11 @@ def common_voice(
 ) -> CommonVoice:
     """Load one Common Voice split."""
 
-    from anydataset import Preset
+    from anydataset import IterableAnyDataset, Preset
 
     resolved = _root(root)
-    return Preset.COMMON_VOICE.create(
+    return IterableAnyDataset.preset(
+        Preset.COMMON_VOICE,
         root=resolved.path,
         split=split,
         language=resolved.language,

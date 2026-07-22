@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from anydataset import FilterRule
-from anydataset.quality.speech import Predicate as SpeechQuality
-from anydataset.quality.speech import Profile as SpeechQualityProfile
+from anydataset.quality.speech import SpeechQuality, SpeechQualityProfile
 from anytrain.evaluator.speech import SpeechEvaluator, UTMOSEvaluator, WhisperASREvaluator
 
 from zhuyin.datasets._wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
@@ -146,7 +145,8 @@ def configure_env(args: argparse.Namespace) -> None:
         "ANYTRAIN_WHISPER_ROOT",
         static_home() / "whisper",
     )
-    os.environ["HF_ENDPOINT"] = args.hf_endpoint
+    if args.hf_endpoint is not None:
+        os.environ["HF_ENDPOINT"] = args.hf_endpoint
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -208,9 +208,5 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--read-prefetch", dest="read_prefetch", type=int)
     parser.add_argument("--write-workers", type=int, default=1)
     parser.add_argument("--write-prefetch", type=int)
-    parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
+    parser.add_argument("--hf-endpoint")
     return parser.parse_args(argv)
-
-
-if __name__ == "__main__":
-    main()

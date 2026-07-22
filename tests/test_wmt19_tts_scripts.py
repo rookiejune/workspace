@@ -13,12 +13,16 @@ from zhuyin.datasets import _wmt19_tts_store as wmt19_store
 SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import filter_wmt19_tts_speech  # noqa: E402
-import filter_wmt19_tts_speech_translation  # noqa: E402
-import filter_wmt19_tts_translation  # noqa: E402
+import _filter_wmt19_tts_speech as speech_filter  # noqa: E402
+import _filter_wmt19_tts_speech_translation as speech_translation_filter  # noqa: E402
+import _filter_wmt19_tts_translation as translation_filter  # noqa: E402
+import _prepare_wmt19_tts_codec as codec_prepare  # noqa: E402
+import _prepare_wmt19_tts_longcat as longcat_prepare  # noqa: E402
+import filter_wmt19_tts  # noqa: E402
 import prepare_wmt19_tts  # noqa: E402
-import prepare_wmt19_tts_codec  # noqa: E402
-import prepare_wmt19_tts_longcat  # noqa: E402
+import prepare_wmt19_tts_codec_view  # noqa: E402
+
+tts_prepare = prepare_wmt19_tts
 
 
 def test_prepare_parser_does_not_accept_filter_options() -> None:
@@ -26,13 +30,27 @@ def test_prepare_parser_does_not_accept_filter_options() -> None:
         prepare_wmt19_tts.parse_args(["--quality-device", "cpu"])
 
 
-def test_prepare_parser_does_not_accept_longcat_options() -> None:
+def test_codec_view_entry_forwards_longcat_options() -> None:
+    args = prepare_wmt19_tts_codec_view.parse_args(["longcat", "--batch-size", "8"])
+
+    assert args.codec == "longcat"
+    assert args.args == ["--batch-size", "8"]
+
+
+def test_filter_entry_forwards_translation_options() -> None:
+    args = filter_wmt19_tts.parse_args(["translation", "--selected-labels", "accept"])
+
+    assert args.task == "translation"
+    assert args.args == ["--selected-labels", "accept"]
+
+
+def test_prepare_tts_parser_does_not_accept_longcat_options() -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts.parse_args(["--longcat-decoder", "16k_4codebooks"])
+        tts_prepare.parse_args(["--longcat-decoder", "16k_4codebooks"])
 
 
-def test_prepare_parser_accepts_chunk_options() -> None:
-    args = prepare_wmt19_tts.parse_args(
+def test_prepare_tts_parser_accepts_chunk_options() -> None:
+    args = tts_prepare.parse_args(
         ["--offset", "10000", "--limit", "2000", "--cleanup-work"]
     )
 
@@ -50,10 +68,10 @@ def test_limited_wmt19_samples_uses_offset(monkeypatch: pytest.MonkeyPatch) -> N
     class FakePreset:
         WMT19 = FakeWMT19
 
-    monkeypatch.setattr(prepare_wmt19_tts, "Preset", FakePreset)
+    monkeypatch.setattr(tts_prepare, "Preset", FakePreset)
 
     samples = list(
-        prepare_wmt19_tts.limited_wmt19_samples(
+        tts_prepare.limited_wmt19_samples(
             split="train",
             source_lang="zh",
             target_lang="en",
@@ -75,7 +93,7 @@ def test_target_role_text_sample_trims_source_reference() -> None:
         (Role.TARGET, Modality.TEXT): TextItem(views={TextView.TEXT: "target"}),
     }
 
-    output = prepare_wmt19_tts.role_text_sample(
+    output = tts_prepare.role_text_sample(
         sample,
         Role.TARGET,
         reference_seconds=0.5,
@@ -89,18 +107,18 @@ def test_target_role_text_sample_trims_source_reference() -> None:
 
 
 def test_target_audio_store_name_tracks_reference_seconds() -> None:
-    assert prepare_wmt19_tts.target_audio_store_name(8.0) == "target-audio-ref8s"
-    assert prepare_wmt19_tts.target_audio_store_name(None) == "target-audio"
+    assert tts_prepare.target_audio_store_name(8.0) == "target-audio-ref8s"
+    assert tts_prepare.target_audio_store_name(None) == "target-audio"
 
 
 def test_longcat_prepare_parser_uses_batch_size() -> None:
-    args = prepare_wmt19_tts_longcat.parse_args(["--batch-size", "8"])
+    args = longcat_prepare.parse_args(["--batch-size", "8"])
 
     assert args.batch_size == 8
 
 
 def test_dac_prepare_parser_uses_official_defaults() -> None:
-    args = prepare_wmt19_tts_codec.parse_args(["dac"])
+    args = codec_prepare.parse_args(["dac"])
 
     assert args.devices == "auto"
     assert args.model_type == "44khz"
@@ -111,7 +129,7 @@ def test_dac_prepare_parser_uses_official_defaults() -> None:
 
 
 def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
-    args = prepare_wmt19_tts_codec.parse_args(
+    args = codec_prepare.parse_args(
         [
             "dac",
             "--dac-cache-dir",
@@ -134,19 +152,19 @@ def test_dac_prepare_parser_accepts_codec_configuration(tmp_path: Path) -> None:
 
 
 def test_stable_prepare_parser_uses_constrained_default() -> None:
-    args = prepare_wmt19_tts_codec.parse_args(["stable"])
+    args = codec_prepare.parse_args(["stable"])
 
     assert args.posthoc_bottleneck.value == "1x46656_400bps"
-    assert prepare_wmt19_tts_codec.prepare_config(args)["posthoc_bottleneck"] is (
+    assert codec_prepare.prepare_config(args)["posthoc_bottleneck"] is (
         args.posthoc_bottleneck
     )
-    assert prepare_wmt19_tts_codec.run_config(args)["posthoc_bottleneck"] == (
+    assert codec_prepare.run_config(args)["posthoc_bottleneck"] == (
         "1x46656_400bps"
     )
 
 
 def test_stable_prepare_parser_accepts_supported_posthoc_preset() -> None:
-    args = prepare_wmt19_tts_codec.parse_args(
+    args = codec_prepare.parse_args(
         ["stable", "--posthoc-bottleneck", "4x729_1000bps"]
     )
 
@@ -155,29 +173,29 @@ def test_stable_prepare_parser_accepts_supported_posthoc_preset() -> None:
 
 def test_stable_prepare_parser_rejects_native_codes() -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts_codec.parse_args(
+        codec_prepare.parse_args(
             ["stable", "--posthoc-bottleneck", "native"]
         )
 
 
 def test_codec_prepare_parser_requires_codec() -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts_codec.parse_args([])
+        codec_prepare.parse_args([])
 
 
 def test_codec_prepare_parser_rejects_other_codec_options() -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts_codec.parse_args(["unicodec", "--model-type", "44khz"])
+        codec_prepare.parse_args(["unicodec", "--model-type", "44khz"])
 
 
 def test_unicodec_prepare_dispatches_codec_configuration(tmp_path: Path) -> None:
-    args = prepare_wmt19_tts_codec.parse_args(
+    args = codec_prepare.parse_args(
         ["unicodec", "--unicodec-cache-dir", str(tmp_path), "--bandwidth-id", "2"]
     )
 
-    config = prepare_wmt19_tts_codec.prepare_config(args)
+    config = codec_prepare.prepare_config(args)
 
-    assert args.prepare is prepare_wmt19_tts_codec.prepare_unicodec
+    assert args.prepare is codec_prepare.prepare_unicodec
     assert config["cache_dir"] == tmp_path
     assert config["domain"] == "0"
     assert config["bandwidth_id"] == 2
@@ -187,7 +205,7 @@ def test_unicodec_prepare_dispatches_codec_configuration(tmp_path: Path) -> None
 @pytest.mark.parametrize("option", ["--prefetch-factor", "--resume"])
 def test_longcat_prepare_parser_rejects_compat_options(option: str) -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts_longcat.parse_args([option, "4"])
+        longcat_prepare.parse_args([option, "4"])
 
 
 @pytest.mark.parametrize(
@@ -196,7 +214,7 @@ def test_longcat_prepare_parser_rejects_compat_options(option: str) -> None:
 )
 def test_longcat_prepare_parser_rejects_provider_options(option: str) -> None:
     with pytest.raises(SystemExit):
-        prepare_wmt19_tts_longcat.parse_args([option, "value"])
+        longcat_prepare.parse_args([option, "value"])
 
 
 def test_filter_uses_wmt19_tts_dataset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,7 +227,7 @@ def test_filter_uses_wmt19_tts_dataset(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     root = tmp_path / "wmt19_tts"
     split = "train"
-    factory = filter_wmt19_tts_speech.StoreFactory(root, split)
+    factory = speech_filter.StoreFactory(root, split)
 
     assert factory() == []
     assert calls == [
@@ -230,7 +248,7 @@ def test_filter_default_factory_uses_default_wmt19_tts_dataset(
         return []
 
     monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
-    factory = filter_wmt19_tts_speech.StoreFactory(None, "train")
+    factory = speech_filter.StoreFactory(None, "train")
 
     assert factory() == []
     assert calls == [{"split": "train"}]
@@ -249,7 +267,7 @@ def test_translation_filter_uses_wmt19_tts_dataset(
     monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
     root = tmp_path / "wmt19_tts"
     split = "train"
-    factory = filter_wmt19_tts_translation.StoreFactory(root, split)
+    factory = translation_filter.StoreFactory(root, split)
 
     assert factory() == []
     assert calls == [
@@ -270,49 +288,47 @@ def test_translation_filter_default_factory_uses_default_wmt19_tts_dataset(
         return []
 
     monkeypatch.setattr(wmt19_store, "wmt19_tts", fake_wmt19_tts)
-    factory = filter_wmt19_tts_translation.StoreFactory(None, "train")
+    factory = translation_filter.StoreFactory(None, "train")
 
     assert factory() == []
     assert calls == [{"split": "train"}]
 
 
-def test_translation_filter_parser_defaults_to_clean_usable_cpu() -> None:
-    args = filter_wmt19_tts_translation.parse_args([])
+def test_translation_filter_parser_defaults_to_accept_cpu() -> None:
+    args = translation_filter.parse_args([])
 
     assert args.filter_device == "cpu"
-    assert args.selected_labels == ["clean", "usable"]
+    assert args.selected_labels == ["accept"]
     assert args.filter_rule_name == "wmt19_zh_en_translation_quality_rules_v1"
 
 
 def test_translation_filter_parser_rejects_prefetch_factor_alias() -> None:
     with pytest.raises(SystemExit):
-        filter_wmt19_tts_translation.parse_args(["--prefetch-factor", "4"])
+        translation_filter.parse_args(["--prefetch-factor", "4"])
 
 
 def test_translation_filter_factory_builds_translation_predicate() -> None:
-    args = filter_wmt19_tts_translation.parse_args([])
+    args = translation_filter.parse_args([])
 
-    predicate = filter_wmt19_tts_translation.TranslationQualityFactory.from_args(args)()
+    predicate = translation_filter.TranslationQualityFactory.from_args(args)()
 
-    assert isinstance(predicate, filter_wmt19_tts_translation.TranslationQuality)
+    assert isinstance(predicate, translation_filter.TranslationQuality)
 
 
 def test_speech_translation_filter_parser_defaults_to_translation_first() -> None:
-    args = filter_wmt19_tts_speech_translation.parse_args([])
+    args = speech_translation_filter.parse_args([])
 
     assert args.order == (
-        filter_wmt19_tts_speech_translation.Stage.TRANSLATION,
-        filter_wmt19_tts_speech_translation.Stage.SPEECH,
+        speech_translation_filter.Stage.TRANSLATION,
+        speech_translation_filter.Stage.SPEECH,
     )
-    assert args.translation_labels == ["clean", "usable"]
+    assert args.translation_labels == ["accept"]
     assert args.translation_rule_name == "wmt19_zh_en_translation_quality_rules_v1"
 
 
 def test_speech_translation_filter_parser_rejects_prefetch_factor_alias() -> None:
     with pytest.raises(SystemExit):
-        filter_wmt19_tts_speech_translation.parse_args(
-            ["--translation-prefetch-factor", "4"]
-        )
+        speech_translation_filter.parse_args(["--translation-prefetch-factor", "4"])
 
 
 def test_prepare_is_ready_store_exposes_broken_ready_store(tmp_path: Path) -> None:
@@ -321,4 +337,4 @@ def test_prepare_is_ready_store_exposes_broken_ready_store(tmp_path: Path) -> No
     (store / ".ready").write_text("ready\n", encoding="utf-8")
 
     with pytest.raises(FileNotFoundError):
-        prepare_wmt19_tts.is_ready_store(store)
+        tts_prepare.is_ready_store(store)

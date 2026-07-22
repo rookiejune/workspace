@@ -337,7 +337,8 @@ def configure_env(args: argparse.Namespace) -> None:
     args.tts_store = args.root / TTS_STORE_DIR
     args.reports_dir = args.root / "reports"
     args.hf_home = _env_path("HF_HOME", static_home() / "huggingface")
-    os.environ["HF_ENDPOINT"] = args.hf_endpoint
+    if args.hf_endpoint is not None:
+        os.environ["HF_ENDPOINT"] = args.hf_endpoint
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -404,7 +405,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tts-do-sample", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--tts-dtype", default="auto")
     parser.add_argument("--tts-attn-implementation", default="sdpa")
-    parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
+    parser.add_argument("--hf-endpoint")
     parser.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--trust-remote-code", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args(argv)

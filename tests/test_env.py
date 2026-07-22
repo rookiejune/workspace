@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from zhuyin import env
+from zhuyin._locations import fudan
 
 
 def _mock_existing_paths(
@@ -15,29 +16,13 @@ def _mock_existing_paths(
     monkeypatch.setattr(Path, "exists", lambda path: str(path) in paths)
 
 
-def test_location_defaults_to_fudan_when_only_mnt_exists(
+def test_location_defaults_to_fudan_when_mnt_exists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     _mock_existing_paths(monkeypatch, {"/mnt"})
 
     assert env.location() is env.Location.FUDAN
-    assert env.LOCATION_ENV not in os.environ
-
-
-def test_location_defaults_to_hz_when_nfs_exists(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
-    _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu"})
-
-    assert env.location() is env.Location.HZ
-    assert env.LOCATION_ENV not in os.environ
-
-
-def test_location_defaults_to_us_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(env.LOCATION_ENV, raising=False)
-    _mock_existing_paths(monkeypatch, {"/mnt", "/nfs/yin.zhu", "/share5_video"})
-
-    assert env.location() is env.Location.US
     assert env.LOCATION_ENV not in os.environ
 
 
@@ -51,16 +36,15 @@ def test_location_uses_fudan_fallback_without_markers(
     assert env.LOCATION_ENV not in os.environ
 
 
-def test_location_accepts_hz(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
+def test_fudan_location_profile_matches_location_file() -> None:
+    assert env.Location.FUDAN.static_home == fudan.STATIC_HOME
+    assert env.Location.FUDAN.dynamic_home == fudan.DYNAMIC_HOME
 
-    assert env.location() is env.Location.HZ
 
+def test_location_accepts_fudan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
 
-def test_location_accepts_us(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.US.value)
-
-    assert env.location() is env.Location.US
+    assert env.location() is env.Location.FUDAN
 
 
 def test_location_rejects_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,7 +61,7 @@ def test_location_rejects_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None
         env.location()
 
 
-def test_static_home_uses_detected_default_without_mutating_environment(
+def test_static_home_uses_fudan_default_without_mutating_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
@@ -85,59 +69,48 @@ def test_static_home_uses_detected_default_without_mutating_environment(
     _mock_existing_paths(monkeypatch, set())
 
     with pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV):
-        assert env.static_home() == env.Location.FUDAN.static_home
+        assert env.static_home() == fudan.STATIC_HOME
 
     assert env.STATIC_HOME_ENV not in os.environ
 
 
-def test_dynamic_home_uses_detected_default_without_mutating_environment(
+def test_dynamic_home_uses_fudan_default_without_mutating_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(env.LOCATION_ENV, raising=False)
     monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
-    _mock_existing_paths(monkeypatch, {"/nfs/yin.zhu"})
+    _mock_existing_paths(monkeypatch, {"/mnt"})
 
     with pytest.warns(RuntimeWarning, match=env.DYNAMIC_HOME_ENV):
-        assert env.dynamic_home() == env.Location.HZ.dynamic_home
+        assert env.dynamic_home() == fudan.DYNAMIC_HOME
 
     assert env.DYNAMIC_HOME_ENV not in os.environ
 
 
-def test_context_defaults_to_location_roots(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
-    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
-
-    with pytest.warns(RuntimeWarning, match=env.Location.HZ.value), env.context():
-        assert env.static_home() == env.Location.HZ.static_home
-        assert env.dynamic_home() == env.Location.HZ.dynamic_home
-
-    assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
-    assert env.STATIC_HOME_ENV not in os.environ
-    assert env.DYNAMIC_HOME_ENV not in os.environ
-
-
-def test_context_defaults_to_us_roots(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.US.value)
-    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
-    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
-
-    with pytest.warns(RuntimeWarning, match=env.Location.US.value), env.context():
-        assert env.static_home() == env.Location.US.static_home
-        assert env.dynamic_home() == env.Location.US.dynamic_home
-
-    assert os.environ[env.LOCATION_ENV] == env.Location.US.value
-    assert env.STATIC_HOME_ENV not in os.environ
-    assert env.DYNAMIC_HOME_ENV not in os.environ
-
-
-def test_explicit_homes_override_location(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
+def test_explicit_homes_override_fudan_location(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
     monkeypatch.setenv(env.STATIC_HOME_ENV, "/custom/static")
     monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/custom/dynamic")
 
     assert env.static_home() == Path("/custom/static")
     assert env.dynamic_home() == Path("/custom/dynamic")
+
+
+def test_train_home_uses_dynamic_train_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/custom/dynamic")
+
+    assert env.train_home() == Path("/custom/dynamic/train")
+    assert env.train_home("speech-to-speech") == Path(
+        "/custom/dynamic/train/speech-to-speech"
+    )
+
+
+def test_train_home_rejects_escaping_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/custom/dynamic")
+
+    for project in ("", ".", "/tmp/run", "../run", "project/../run"):
+        with pytest.raises(ValueError, match="project"):
+            env.train_home(project)
 
 
 def test_homes_reject_empty_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -160,9 +133,9 @@ def test_context_applies_fudan_default_environment(
 
     with pytest.warns(RuntimeWarning), env.context():
         assert env.location() is env.Location.FUDAN
-        assert env.static_home() == Path("/mnt/pami202/zhuyin")
-        assert env.dynamic_home() == Path("/mnt/pami202/zhuyin/dynamic")
-        assert env.datasets_home() == Path("/mnt/pami202/zhuyin/datasets")
+        assert env.static_home() == fudan.STATIC_HOME
+        assert env.dynamic_home() == fudan.DYNAMIC_HOME
+        assert env.datasets_home() == fudan.STATIC_HOME / "datasets"
 
     assert env.LOCATION_ENV not in os.environ
     assert env.STATIC_HOME_ENV not in os.environ
@@ -175,12 +148,12 @@ def test_context_restores_previous_values(
     monkeypatch.setenv(env.STATIC_HOME_ENV, "/old/static")
 
     with env.context(
-        LOCATION=env.Location.US.value,
+        LOCATION=env.Location.FUDAN.value,
         STATIC_HOME="/data/static",
         DYNAMIC_HOME="/data/dynamic",
     ):
         assert env.static_home() == Path("/data/static")
-        assert os.environ[env.LOCATION_ENV] == env.Location.US.value
+        assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
         assert os.environ[env.STATIC_HOME_ENV] == "/data/static"
         assert os.environ[env.DYNAMIC_HOME_ENV] == "/data/dynamic"
 
@@ -192,13 +165,13 @@ def test_context_restores_previous_values(
 def test_context_applies_workspace_environment_and_unsets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.HZ.value)
+    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
     monkeypatch.setenv(env.STATIC_HOME_ENV, "/data/static")
     monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/data/dynamic")
 
     with env.context():
         assert env.static_home() == Path("/data/static")
-        assert os.environ[env.LOCATION_ENV] == env.Location.HZ.value
+        assert os.environ[env.LOCATION_ENV] == env.Location.FUDAN.value
         assert os.environ[env.STATIC_HOME_ENV] == "/data/static"
         assert os.environ[env.DYNAMIC_HOME_ENV] == "/data/dynamic"
 
@@ -217,8 +190,8 @@ def test_context_none_override_re_resolves_workspace(
         pytest.warns(RuntimeWarning, match=env.STATIC_HOME_ENV),
         env.context(STATIC_HOME=None, CUSTOM_ENV="value"),
     ):
-        assert env.static_home() == env.Location.FUDAN.static_home
-        assert os.environ[env.STATIC_HOME_ENV] == str(env.Location.FUDAN.static_home)
+        assert env.static_home() == fudan.STATIC_HOME
+        assert os.environ[env.STATIC_HOME_ENV] == str(fudan.STATIC_HOME)
         assert os.environ["CUSTOM_ENV"] == "value"
 
     assert os.environ[env.STATIC_HOME_ENV] == "/old/static"

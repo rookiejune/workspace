@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from anydataset import FilterRule
-from anydataset.quality.translation import Predicate as TranslationQuality
-from anydataset.quality.translation import Profile as TranslationQualityProfile
+from anydataset.quality.translation import TranslationQuality, TranslationQualityProfile
+from anydataset.types import Lang
 
 from zhuyin.datasets._wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
 from zhuyin.datasets._wmt19_tts_store import StoreFactory, resolve_root
@@ -74,34 +74,24 @@ def apply_translation_filter(args: argparse.Namespace) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class TranslationQualityFactory:
-    source_lang: str
-    target_lang: str
-    min_chars: int
+    source_lang: Lang
+    target_lang: Lang
     review_min_ratio: float
     review_max_ratio: float
     reject_min_ratio: float
     reject_max_ratio: float
-    min_script_ratio: float
-    reject_script_ratio: float
-    min_script_chars: int
-    max_control_ratio: float
-    max_repeated_run: int
+    min_identical_script_chars: int
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> TranslationQualityFactory:
         return cls(
-            source_lang=args.source_lang,
-            target_lang=args.target_lang,
-            min_chars=args.min_chars,
+            source_lang=Lang(args.source_lang),
+            target_lang=Lang(args.target_lang),
             review_min_ratio=args.review_min_ratio,
             review_max_ratio=args.review_max_ratio,
             reject_min_ratio=args.reject_min_ratio,
             reject_max_ratio=args.reject_max_ratio,
-            min_script_ratio=args.min_script_ratio,
-            reject_script_ratio=args.reject_script_ratio,
-            min_script_chars=args.min_script_chars,
-            max_control_ratio=args.max_control_ratio,
-            max_repeated_run=args.max_repeated_run,
+            min_identical_script_chars=args.min_identical_script_chars,
         )
 
     def __call__(self) -> TranslationQuality:
@@ -109,16 +99,11 @@ class TranslationQualityFactory:
             TranslationQualityProfile(
                 source_lang=self.source_lang,
                 target_lang=self.target_lang,
-                min_chars=self.min_chars,
                 review_min_ratio=self.review_min_ratio,
                 review_max_ratio=self.review_max_ratio,
                 reject_min_ratio=self.reject_min_ratio,
                 reject_max_ratio=self.reject_max_ratio,
-                min_script_ratio=self.min_script_ratio,
-                reject_script_ratio=self.reject_script_ratio,
-                min_script_chars=self.min_script_chars,
-                max_control_ratio=self.max_control_ratio,
-                max_repeated_run=self.max_repeated_run,
+                min_identical_script_chars=self.min_identical_script_chars,
             )
         )
 
@@ -145,16 +130,11 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
         "write_workers": args.write_workers,
         "write_prefetch": args.write_prefetch,
         "thresholds": {
-            "min_chars": args.min_chars,
             "review_min_ratio": args.review_min_ratio,
             "review_max_ratio": args.review_max_ratio,
             "reject_min_ratio": args.reject_min_ratio,
             "reject_max_ratio": args.reject_max_ratio,
-            "min_script_ratio": args.min_script_ratio,
-            "reject_script_ratio": args.reject_script_ratio,
-            "min_script_chars": args.min_script_chars,
-            "max_control_ratio": args.max_control_ratio,
-            "max_repeated_run": args.max_repeated_run,
+            "min_identical_script_chars": args.min_identical_script_chars,
         },
     }
 
@@ -176,7 +156,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--selected-labels",
         nargs="+",
-        default=["clean", "usable"],
+        default=["accept"],
     )
     parser.add_argument("--filter-commit-samples", type=int, default=100_000)
     parser.add_argument("--preview-metrics", type=int, default=5)
@@ -185,18 +165,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--read-prefetch", dest="read_prefetch", type=int)
     parser.add_argument("--write-workers", type=int, default=1)
     parser.add_argument("--write-prefetch", type=int)
-    parser.add_argument("--min-chars", type=int, default=1)
     parser.add_argument("--review-min-ratio", type=float, default=0.2)
     parser.add_argument("--review-max-ratio", type=float, default=6.0)
     parser.add_argument("--reject-min-ratio", type=float, default=0.05)
     parser.add_argument("--reject-max-ratio", type=float, default=20.0)
-    parser.add_argument("--min-script-ratio", type=float, default=0.45)
-    parser.add_argument("--reject-script-ratio", type=float, default=0.2)
-    parser.add_argument("--min-script-chars", type=int, default=4)
-    parser.add_argument("--max-control-ratio", type=float, default=0.02)
-    parser.add_argument("--max-repeated-run", type=int, default=24)
+    parser.add_argument("--min-identical-script-chars", type=int, default=4)
     return parser.parse_args(argv)
-
-
-if __name__ == "__main__":
-    main()

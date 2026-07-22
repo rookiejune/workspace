@@ -7,7 +7,7 @@ name = "zhuyin-workspace"
 version = "0.1.0"
 description = "Reusable local workspace loading entrances."
 requires-python = ">=3.9"
-dependencies = ["anydataset"]
+dependencies = ["anydataset", "torch>=2.0"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]

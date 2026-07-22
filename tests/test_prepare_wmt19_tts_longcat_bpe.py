@@ -9,7 +9,7 @@ import pytest
 import torch
 from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, Source, Spec
 
-from scripts import prepare_wmt19_tts_longcat_bpe as script
+from scripts import prepare_wmt19_tts_bpe as script
 
 
 class FakeDataset:

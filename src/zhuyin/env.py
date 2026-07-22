@@ -1,10 +1,10 @@
 """Resolve workspace machine locations, physical roots and environment injection.
 
-This module owns the known `Location` values, each location's workspace homes
-and the filesystem markers used for detection. Path helpers resolve environment
-values or location defaults without modifying the process environment.
-`context()` temporarily injects the same resolved values for code that requires
-environment variables.
+This module owns the public `Location` values and loads each location's homes
+and filesystem markers from private location profile modules. Path helpers
+resolve environment values or location defaults without modifying the process
+environment. `context()` temporarily injects the same resolved values for code
+that requires environment variables.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Union
 
 from ._compat import StrEnum
+from ._locations import DEFAULT_LOCATION, DETECTION_MARKERS, LOCATION_PROFILES
 
 LOCATION_ENV = "LOCATION"
 STATIC_HOME_ENV = "STATIC_HOME"
@@ -36,8 +37,6 @@ class Location(StrEnum):
     """Known machine locations."""
 
     FUDAN = auto()
-    HZ = auto()
-    US = auto()
 
     @property
     def static_home(self) -> Path:
@@ -49,26 +48,16 @@ class Location(StrEnum):
 
 
 _HOMES: dict[Location, dict[str, Path]] = {
-    Location.FUDAN: {
-        STATIC_HOME_ENV: Path("/mnt/pami202/zhuyin"),
-        DYNAMIC_HOME_ENV: Path("/mnt/pami202/zhuyin/dynamic"),
-    },
-    Location.HZ: {
-        STATIC_HOME_ENV: Path("/nfs/yin.zhu"),
-        DYNAMIC_HOME_ENV: Path("/yin.zhu"),
-    },
-    Location.US: {
-        STATIC_HOME_ENV: Path("/zoomai/colddata/video/yin.zhu"),
-        DYNAMIC_HOME_ENV: Path("/share5_video/users/yin.zhu"),
-    },
+    Location(name): {
+        STATIC_HOME_ENV: profile["static_home"],
+        DYNAMIC_HOME_ENV: profile["dynamic_home"],
+    }
+    for name, profile in LOCATION_PROFILES.items()
 }
 
 # Detection markers checked in order; FUDAN is also the fallback.
-_MARKERS = (
-    (Path("/share5_video"), Location.US),
-    (Path("/nfs/yin.zhu"), Location.HZ),
-    (Path("/mnt"), Location.FUDAN),
-)
+_MARKERS = tuple((marker, Location(name)) for marker, name in DETECTION_MARKERS)
+
 
 @contextmanager
 def context(**overrides: EnvValue) -> Iterator[None]:
@@ -138,6 +127,24 @@ def datasets_home() -> Path:
     return static_home() / "datasets"
 
 
+def train_home(project: str | PathLike[str] | None = None) -> Path:
+    """Return the workspace training output root.
+
+    `project` is an optional relative child directory under
+    ``dynamic_home()/train``. It is validated here so experiment repos can rely
+    on one workspace path contract instead of maintaining project-specific
+    training-root environment fallbacks.
+    """
+
+    root = dynamic_home() / "train"
+    if project is None:
+        return root
+    subdir = Path(project)
+    if subdir == Path(".") or subdir.is_absolute() or ".." in subdir.parts:
+        raise ValueError("project must be a non-empty relative path without '..'.")
+    return root / subdir
+
+
 def _resolved_home(name: str) -> Path:
     source = os.environ
     return _home(name, source, _location(source))
@@ -160,7 +167,7 @@ def _detected_location() -> Location:
     for marker, item in _MARKERS:
         if marker.exists():
             return item
-    return Location.FUDAN
+    return Location(DEFAULT_LOCATION)
 
 
 def _home(name: str, environ: Mapping[str, str], resolved: Location) -> Path:
@@ -169,7 +176,13 @@ def _home(name: str, environ: Mapping[str, str], resolved: Location) -> Path:
         if not value:
             raise ValueError(f"{name} must not be empty.")
         return Path(value).expanduser()
-    default = _HOMES[resolved][name]
+    defaults = _HOMES.get(resolved)
+    if defaults is None:
+        raise NotImplementedError(
+            f"{resolved.value} location defaults are not implemented; set {name} "
+            "explicitly or add the corresponding location profile."
+        )
+    default = defaults[name]
     warnings.warn(
         f"{name} is not set; using {resolved.value} default {default}.",
         RuntimeWarning,
@@ -197,4 +210,5 @@ __all__ = [
     "dynamic_home",
     "location",
     "static_home",
+    "train_home",
 ]

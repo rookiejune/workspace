@@ -70,7 +70,3 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--write-workers", type=int, default=1)
     parser.add_argument("--write-prefetch", type=int)
     return parser.parse_args(argv)
-
-
-if __name__ == "__main__":
-    main()

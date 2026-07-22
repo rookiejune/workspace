@@ -16,8 +16,12 @@ from enum import auto
 from pathlib import Path
 from typing import Any
 
-import filter_wmt19_tts_speech as speech_filter
-import filter_wmt19_tts_translation as translation_filter
+if __package__:
+    from . import _filter_wmt19_tts_speech as speech_filter
+    from . import _filter_wmt19_tts_translation as translation_filter
+else:
+    import _filter_wmt19_tts_speech as speech_filter
+    import _filter_wmt19_tts_translation as translation_filter
 from anydataset import FilterRule
 from anydataset.filter import FilteredDataset
 
@@ -179,7 +183,8 @@ def configure_env(args: argparse.Namespace) -> None:
         "ANYTRAIN_WHISPER_ROOT",
         static_home() / "whisper",
     )
-    os.environ["HF_ENDPOINT"] = args.hf_endpoint
+    if args.hf_endpoint is not None:
+        os.environ["HF_ENDPOINT"] = args.hf_endpoint
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -209,16 +214,11 @@ def run_config(args: argparse.Namespace) -> dict[str, Any]:
             "source_lang": args.source_lang,
             "target_lang": args.target_lang,
             "thresholds": {
-                "min_chars": args.min_chars,
                 "review_min_ratio": args.review_min_ratio,
                 "review_max_ratio": args.review_max_ratio,
                 "reject_min_ratio": args.reject_min_ratio,
                 "reject_max_ratio": args.reject_max_ratio,
-                "min_script_ratio": args.min_script_ratio,
-                "reject_script_ratio": args.reject_script_ratio,
-                "min_script_chars": args.min_script_chars,
-                "max_control_ratio": args.max_control_ratio,
-                "max_repeated_run": args.max_repeated_run,
+                "min_identical_script_chars": args.min_identical_script_chars,
             },
         },
         "speech": {
@@ -251,7 +251,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--order", type=parse_order, default=parse_order("translation,speech"))
     parser.add_argument("--max-shard-samples", type=int, default=100_000)
     parser.add_argument("--preview-metrics", type=int, default=5)
-    parser.add_argument("--hf-endpoint", default="https://hf-mirror.com")
+    parser.add_argument("--hf-endpoint")
 
     parser.add_argument("--source-lang", default="zh")
     parser.add_argument("--target-lang", default="en")
@@ -260,7 +260,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--translation-rule-name",
         default="wmt19_zh_en_translation_quality_rules_v1",
     )
-    parser.add_argument("--translation-labels", nargs="+", default=["clean", "usable"])
+    parser.add_argument("--translation-labels", nargs="+", default=["accept"])
     parser.add_argument("--translation-commit-samples", type=int, default=100_000)
     parser.add_argument("--translation-batch-size", type=int, default=1)
     parser.add_argument("--translation-num-workers", type=int, default=0)
@@ -271,16 +271,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--translation-write-workers", type=int, default=1)
     parser.add_argument("--translation-write-prefetch", type=int)
-    parser.add_argument("--min-chars", type=int, default=1)
     parser.add_argument("--review-min-ratio", type=float, default=0.2)
     parser.add_argument("--review-max-ratio", type=float, default=6.0)
     parser.add_argument("--reject-min-ratio", type=float, default=0.05)
     parser.add_argument("--reject-max-ratio", type=float, default=20.0)
-    parser.add_argument("--min-script-ratio", type=float, default=0.45)
-    parser.add_argument("--reject-script-ratio", type=float, default=0.2)
-    parser.add_argument("--min-script-chars", type=int, default=4)
-    parser.add_argument("--max-control-ratio", type=float, default=0.02)
-    parser.add_argument("--max-repeated-run", type=int, default=24)
+    parser.add_argument("--min-identical-script-chars", type=int, default=4)
 
     parser.add_argument("--speech-filter-device", default="auto")
     parser.add_argument("--quality-device")
@@ -313,7 +308,3 @@ def parse_order(value: str) -> tuple[Stage, ...]:
             "order must be `translation,speech` or `speech,translation`."
         )
     return stages
-
-
-if __name__ == "__main__":
-    main()

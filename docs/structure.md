@@ -8,7 +8,13 @@
 ```text
 src/zhuyin/
   env.py                         # 机器 profile、workspace root 和临时环境上下文
+  _locations/
+    fudan.py                     # 复旦机器默认 homes 和 marker
+    hz.py                        # 杭州 no-implement 占位；启用时单独补 profile 和测试
+    us.py                        # US no-implement 占位；启用时单独补 profile 和测试
   datasets/
+    aut.py                       # WMT19 TTS prepared Qwen2.5 AuT target 入口
+    _aut_store.py                # prepared AuT manifest/index/payload 严格读取
     common_voice.py              # Common Voice 逻辑数据集入口
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
     _wmt19_tts_prepare.py        # prepare 服务
@@ -22,9 +28,17 @@ src/zhuyin/
     _codec_bpe_artifact.py       # BPE 训练默认值和 artifact 命名
     codec_bpe.py                 # tokenizer artifact 定位与加载
 scripts/
-  *.py                           # argparse、服务调用和 summary 打印
+  prepare_wmt19_tts.py           # WMT19 TTS waveform store 入口
+  prepare_wmt19_tts_codec_view.py # WMT19 codec view 统一入口：longcat/dac/stable/unicodec
+  prepare_wmt19_tts_bpe.py       # WMT19 LongCat semantic BPE 入口
+  filter_wmt19_tts.py            # WMT19 过滤任务统一入口：speech/translation/speech-translation
+  _*.py                          # 入口复用的私有 argparse、服务调用和 summary 打印 helper
 jobs/
-  *.sh                           # 环境激活、cd 和唯一 Python 调用
+  env.sh                         # 共享 workspace 环境解析，不含任务逻辑
+  locations/
+    fudan/*.sh                   # Fudan 提交入口，调用统一 scripts
+    hz/README.md                 # HZ no-implement 占位
+    us/README.md                 # US no-implement 占位
 docs/
   datasets/                      # 公开数据集契约
   structure.md                   # workspace 总体边界和迁移顺序
@@ -38,11 +52,15 @@ docs/
 
 ### Environment
 
-`zhuyin.env` 是机器相关信息的唯一所有者，包括：
+`zhuyin.env` 是机器相关公开信息的唯一所有者，并从私有
+`src/zhuyin/_locations/fudan.py` 读取当前已实现 location 的本地配置，包括：
 
-- `Location` 和各 location 的 `STATIC_HOME`、`DYNAMIC_HOME` 默认值。
-- location 自动探测所需的文件系统 marker。
+- `Location.FUDAN` 的 `STATIC_HOME`、`DYNAMIC_HOME` 默认值。
+- Fudan 自动探测所需的文件系统 marker。
 - `context()`、`location()`、`static_home()`、`dynamic_home()` 和 `datasets_home()`。
+
+其他 location 只在 `_locations/` 保留 no-implement 占位文件，不注册到运行时 profile，
+不预填真实路径或数据源；需要启用时在同一改动里补齐 profile、loader source 和测试。
 
 数据集 export、模型 checkpoint 等具体资产路径不属于 `zhuyin.env`；它们由对应 loader 或
 资源模块根据 workspace root 解析。
@@ -50,7 +68,7 @@ docs/
 环境函数按以下顺序纯解析路径：
 
 1. 当前进程环境变量。
-2. `LOCATION` 对应的默认值；使用默认 home 时发 `RuntimeWarning`。
+2. `LOCATION=fudan` 对应的默认值；使用默认 home 时发 `RuntimeWarning`。
 
 `location()` 读取 `$LOCATION`，缺失时根据 marker 探测。`static_home()`、
 `dynamic_home()` 和 `datasets_home()` 返回解析结果但不修改 `os.environ`。公开 loader
@@ -72,6 +90,19 @@ Common Voice 只有一个标准 store root，不公开机器 profile：
 common_voice(*, root=None, split="train")
 ```
 
+Prepared AuT 是独立的 map-style tensor store，不走 `anydataset`：
+
+```python
+prepared_aut(*, root=None, split="train", revision=DEFAULT_REVISION)
+```
+
+默认读取
+`datasets_home() / "prepared_aut/wmt19_tts/qwen2_5-omni-7b/<revision>/<split>"`；显式
+`root` 表示 `prepared_aut/wmt19_tts` 数据集根。teacher checkpoint/revision、Transformers
+版本、feature schema、Qwen2.5 timing 和 16 kHz mono waveform 都由 manifest 固定，loader
+不提供兼容或在线转换分支。完整 artifact 和 sample 契约见
+[`docs/datasets/aut.md`](datasets/aut.md)。
+
 WMT19 TTS 的公开入口不暴露物理 profile：
 
 ```python
@@ -86,15 +117,14 @@ wmt19_tts_unicodec(*, root=None, split="train")
 参数规则：
 
 - 显式 `root` 始终读取标准 store。
-- `root=None` 时，loader 根据当前 location 和请求的逻辑视图选择默认物理来源。
-- HZ 的 TTS 和 LongCat export 路径是 WMT19 模块的私有实现，不进入 `zhuyin.env`。
-- DAC、Stable Codec 和 UniCodec 没有 HZ export，默认读取标准 store。
-- 需要在 HZ 强制读取标准 store 时，显式传 `root=dataset_root()`。
+- `root=None` 时，目前只实现 Fudan 默认来源，读取标准 store。
+- 其他 location 不保留 dataset source 目录；需要启用时单独补齐 source 实现和测试。
+- 非 Fudan location 临时读取已有标准 store 时，显式传 `root=...`。
 
 `root` 始终表示标准 WMT19 TTS 数据集根目录，其下包含 `base/`、`longcat/`、`dac/`、
 `stable-1x46656_400bps/` 等逻辑视图。Stable Codec 的目录名包含 posthoc
 quantizer preset；旧 `stable/` native-FSQ store 不在公开 loader 的兼容范围内。`root` 不表示
-具体 view 目录，也不覆盖 HZ export 路径。
+具体 view 目录，也不覆盖 location 默认来源。
 
 ### Tokenizer Artifacts
 
@@ -123,6 +153,10 @@ WMT19 TTS 的 prepare、codec、filter 和 BPE 规则放在
 私有服务层可以依赖 `anydataset` 和 `anytrain` 的公开接口，但不依赖 `argparse.Namespace`，
 不解析 CLI 参数，也不打印命令行 summary。
 
+公开 prepare 脚本按 TTS、codec-view 和 BPE 三件事分开；codec-view 内部再用子命令选择
+LongCat、DAC、Stable Codec 或 UniCodec。同一件事不再保留多个 location-neutral Python
+入口。私有 helper 使用 `_` 前缀，只供公开入口和测试复用。
+
 脚本只负责：
 
 1. 定义该入口独有的 argparse 参数。
@@ -135,9 +169,10 @@ WMT19 TTS 的 prepare、codec、filter 和 BPE 规则放在
 
 ## Jobs
 
-job wrapper 只 source `workspace/jobs/env.sh`，进入项目根目录，并调用真实 Python 脚本。
-所有 wrapper 的 Python 命令末尾保留 `"$@"`。机器路径优先通过 workspace profile 或环境
-变量表达，不在通用 wrapper 中硬编码。
+job wrapper 按 location 放在 `jobs/locations/<location>/`。wrapper 先 source 对应
+location 的 `env.sh`，进入项目根目录，并调用真实 Python 脚本。所有 wrapper 的
+Python 命令末尾保留 `"$@"`。机器路径、Python 解释器和设备默认值只放在 location
+job 层，不写进统一 `scripts/`。
 
 WMT19 数据处理脚本统一使用 `--root` 表示数据集根目录。BPE 输出根使用 `--bpe-root`，与
 输入数据集根分开；未传时由 `BPE_CACHE_DIR` 或 workspace 默认路径解析。
