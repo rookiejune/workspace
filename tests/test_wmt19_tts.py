@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 import torch
-from anydataset.types import AudioView, Modality, Role, Source, TextMeta, TextView
+from anydataset.types import AudioMeta, AudioView, Modality, Role, Source, TextMeta, TextView
 
 from zhuyin import env
 from zhuyin.datasets import wmt19_tts as module
@@ -109,7 +109,7 @@ def test_wmt19_tts_codec_longcat_uses_longcat_store(
 def test_longcat_store_transform_accepts_anytrain_codes() -> None:
     item = module.AudioItem(
         views={AudioView.LONGCAT: torch.tensor([[1, 4], [2, 5]])},
-        meta={"speaker": "test"},
+        meta={AudioMeta.SPEAKER_ID: "test"},
     )
 
     transformed = module._longcat_item(item)

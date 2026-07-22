@@ -99,6 +99,32 @@ workspace/notebooks/datasets/wmt19_tts.ipynb
 `ANYTRAIN_WHISPER_ROOT` 由具体脚本按需读取或由调用环境显式设置。临时使用其他标准 store
 根目录时传 `root=...`。
 
+## Store schema
+
+标准 `base/` 和 codec view 只接受 anydataset store schema v2。当前 prepare 流程通过
+`DatasetWriter` 直接生成 v2；loader 遇到 v1 会明确报错，不在读取或训练过程中自动迁移，
+也不回退到旧 schema。这样不会把长时间复制或半成品发布隐藏在数据读取副作用里。
+
+存量 v1 store 使用 anydataset 的离线迁移入口生成独立副本：
+
+```bash
+ROOT=/mnt/pami202/zhuyin/datasets/wmt19_tts
+STAGING=/mnt/pami202/zhuyin/datasets/wmt19_tts-schema-v2-staging
+
+PYTHONPATH=../third_party/anydataset/src \
+python -m anydataset.store.maintenance migrate \
+  "$ROOT/base" "$STAGING/base"
+```
+
+迁移期间冻结源 store 的 writer，并预留至少一份源 store 的额外空间。迁移完成后，在 staging
+root 下只读引用对应 codec view，用 `wmt19_tts(root=...)` 和 `wmt19_tts_codec(root=...)`
+验收 manifest、sample count 和真实 payload。验收通过后在同一文件系统内将原 `base/` 改名为
+回滚副本，再把 v2 目录改名为稳定的 `base/`；默认入口复验通过前不要删除回滚副本。
+
+复旦 canonical `base/` 已于 2026-07-22 从 v1 迁移到 v2。1000 条 base/LongCat 样本在切换
+前后均通过真实 loader 全量反序列化，默认 speech DataModule collate 和两步 GPU smoke 通过；
+原 v1 store 暂时保留在 `base-schema-v1-backup-20260722/`。
+
 ## 合成 TTS
 
 WMT19 TTS 生成脚本位于 workspace：
