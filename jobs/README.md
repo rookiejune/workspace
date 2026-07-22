@@ -22,26 +22,26 @@ Common environment:
 | `PYTHONPATH` | Prepends `workspace/src` and required `third_party` packages. |
 
 Root `jobs/env.sh` only resolves the shared workspace environment. Location
-wrappers source their own `jobs/locations/<location>/env.sh`, which pins the
+wrappers source their own `jobs/<location>/env.sh`, which pins the
 location and then sources the root env. Do not put location-specific launch
 defaults in `scripts/`.
 
 Implemented Fudan wrappers:
 
 ```bash
-jobs/locations/fudan/prepare_wmt19_tts.sh
-jobs/locations/fudan/prepare_wmt19_tts_chunks_500k.sh
-jobs/locations/fudan/prepare_wmt19_tts_longcat.sh
-jobs/locations/fudan/prepare_wmt19_tts_dac.sh
-jobs/locations/fudan/prepare_wmt19_tts_stable.sh
-jobs/locations/fudan/prepare_wmt19_tts_unicodec.sh
-jobs/locations/fudan/filter_wmt19_tts_speech.sh
-jobs/locations/fudan/filter_wmt19_tts_translation.sh
-jobs/locations/fudan/filter_wmt19_tts_speech_translation.sh
-jobs/locations/fudan/prepare_wmt19_tts_longcat_bpe.sh
+jobs/fudan/prepare_wmt19_tts.sh
+jobs/fudan/prepare_wmt19_tts_chunks_500k.sh
+jobs/fudan/prepare_wmt19_tts_longcat.sh
+jobs/fudan/prepare_wmt19_tts_dac.sh
+jobs/fudan/prepare_wmt19_tts_stable.sh
+jobs/fudan/prepare_wmt19_tts_unicodec.sh
+jobs/fudan/filter_wmt19_tts_speech.sh
+jobs/fudan/filter_wmt19_tts_translation.sh
+jobs/fudan/filter_wmt19_tts_speech_translation.sh
+jobs/fudan/prepare_wmt19_tts_longcat_bpe.sh
 ```
 
-`jobs/locations/hz/` and `jobs/locations/us/` are placeholders. Add wrappers
+`jobs/hz/` and `jobs/us/` are placeholders. Add wrappers
 there only when the matching `src/zhuyin/_locations/<location>.py` profile and
 any required loader source/tests are implemented in the same change.
 
@@ -66,5 +66,5 @@ store.
 Debug BPE runs can keep their own artifact names by limiting samples:
 
 ```bash
-jobs/locations/fudan/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000
+jobs/fudan/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000
 ```

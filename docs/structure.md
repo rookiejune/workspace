@@ -35,10 +35,9 @@ scripts/
   _*.py                          # 入口复用的私有 argparse、服务调用和 summary 打印 helper
 jobs/
   env.sh                         # 共享 workspace 环境解析，不含任务逻辑
-  locations/
-    fudan/*.sh                   # Fudan 提交入口，调用统一 scripts
-    hz/README.md                 # HZ no-implement 占位
-    us/README.md                 # US no-implement 占位
+  fudan/*.sh                     # Fudan 提交入口，调用统一 scripts
+  hz/README.md                   # HZ no-implement 占位
+  us/README.md                   # US no-implement 占位
 docs/
   datasets/                      # 公开数据集契约
   structure.md                   # workspace 总体边界和迁移顺序
@@ -169,7 +168,7 @@ LongCat、DAC、Stable Codec 或 UniCodec。同一件事不再保留多个 locat
 
 ## Jobs
 
-job wrapper 按 location 放在 `jobs/locations/<location>/`。wrapper 先 source 对应
+job wrapper 按 location 放在 `jobs/<location>/`。wrapper 先 source 对应
 location 的 `env.sh`，进入项目根目录，并调用真实 Python 脚本。所有 wrapper 的
 Python 命令末尾保留 `"$@"`。机器路径、Python 解释器和设备默认值只放在 location
 job 层，不写进统一 `scripts/`。
