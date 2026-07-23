@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 from anydataset.types import (
     AudioItem,
@@ -36,6 +37,21 @@ def test_speaker_dataset_factory_assigns_speaker_ids() -> None:
 
     assert isinstance(item, TextItem)
     assert item.views[TextView.SPEAKERS] == "Vivian"
+
+
+def test_speaker_dataset_factory_rejects_empty_speaker_ids() -> None:
+    def dataset_factory():
+        return [
+            {(Role.DEFAULT, Modality.TEXT): TextItem(views={TextView.TEXT: "hello"})}
+        ]
+
+    with pytest.raises(ValueError, match="speaker_ids must not be empty"):
+        SpeakerDatasetFactory(
+            dataset_factory,
+            (),
+            "cycle",
+            (Role.DEFAULT, Modality.TEXT),
+        )
 
 
 def test_speaker_grid_factory_expands_text_by_speaker() -> None:
@@ -95,6 +111,37 @@ def test_grouped_qwen_tts_speech_dataset_groups_waveforms_by_text() -> None:
         waveform,
         torch.tensor([[[1.0, 2.0]], [[3.0, 0.0]]]),
     )
+
+
+def test_grouped_qwen_tts_speech_dataset_rejects_invalid_sample_rate() -> None:
+    flat = [
+        _flat_sample("hello", "Vivian", 0, (torch.tensor([[1.0]]), 0)),
+    ]
+    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian",))
+
+    with pytest.raises(ValueError, match="sample rate must be positive"):
+        grouped[0]
+
+
+def test_grouped_qwen_tts_speech_dataset_rejects_non_2d_waveform() -> None:
+    flat = [
+        _flat_sample("hello", "Vivian", 0, (torch.tensor([1.0, 2.0]), 24000)),
+    ]
+    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian",))
+
+    with pytest.raises(ValueError, match=r"shape \[channel, time\]"):
+        grouped[0]
+
+
+def test_grouped_qwen_tts_speech_dataset_rejects_mismatched_channels() -> None:
+    flat = [
+        _flat_sample("hello", "Vivian", 0, (torch.ones(1, 2), 24000)),
+        _flat_sample("hello", "Ryan", 0, (torch.ones(2, 2), 24000)),
+    ]
+    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian", "Ryan"))
+
+    with pytest.raises(ValueError, match="expected prefix shape"):
+        grouped[0]
 
 
 def _flat_sample(text: str, speaker_id: str, source_index: int, waveform):

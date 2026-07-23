@@ -47,6 +47,9 @@ class SpeakerDatasetFactory:
     mode: SpeakerMode
     text_ref: TextRef
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "speaker_ids", _speaker_ids(self.speaker_ids))
+
     def __call__(self) -> SpeakerIdDataset:
         return SpeakerIdDataset(
             self.dataset_factory(),
@@ -61,6 +64,9 @@ class SpeakerGridDatasetFactory:
     dataset_factory: DatasetFactory
     speaker_ids: tuple[str, ...]
     text_ref: TextRef
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "speaker_ids", _speaker_ids(self.speaker_ids))
 
     def __call__(self) -> SpeakerCartesianDataset:
         return SpeakerCartesianDataset(
@@ -78,9 +84,9 @@ class GroupedQwenTTSSpeechDataset:
     audio_ref: tuple[Role, Modality] = (Role.DEFAULT, Modality.AUDIO)
 
     def __post_init__(self) -> None:
-        if not self.speaker_ids:
-            raise ValueError("speaker_ids must not be empty.")
-        if len(self.dataset) % len(self.speaker_ids) != 0:
+        speaker_ids = _speaker_ids(self.speaker_ids)
+        object.__setattr__(self, "speaker_ids", speaker_ids)
+        if len(self.dataset) % len(speaker_ids) != 0:
             raise ValueError("flat TTS dataset length must be divisible by speaker count.")
 
     def __len__(self) -> int:
@@ -95,9 +101,9 @@ class GroupedQwenTTSSpeechDataset:
             raise IndexError("grouped sample index out of range.")
 
         start = index * len(self.speaker_ids)
-        samples = [self.dataset[start + offset] for offset in range(len(self.speaker_ids))]
-        first_text = _text_item(samples[0][self.text_ref], self.text_ref)
-        grouped: Sample = dict(samples[0])
+        first_sample = self.dataset[start]
+        first_text = _text_item(first_sample[self.text_ref], self.text_ref)
+        grouped: Sample = dict(first_sample)
         grouped[self.text_ref] = TextItem(
             views=first_text.views,
             meta={
@@ -108,8 +114,8 @@ class GroupedQwenTTSSpeechDataset:
         waveforms: list[Any] = []
         lengths: list[int] = []
         sample_rate: int | None = None
-        for offset, sample in enumerate(samples):
-            speaker_id = self.speaker_ids[offset]
+        for offset, speaker_id in enumerate(self.speaker_ids):
+            sample = first_sample if offset == 0 else self.dataset[start + offset]
             text_item = _text_item(sample[self.text_ref], self.text_ref)
             source_index = text_item.meta.get(TextMeta.SOURCE_INDEX)
             if source_index != index:
@@ -131,6 +137,8 @@ class GroupedQwenTTSSpeechDataset:
                 raise ValueError("grouped speaker waveforms must share one sample rate.")
             waveforms.append(waveform)
             lengths.append(int(waveform.shape[-1]))
+        if sample_rate is None:
+            raise ValueError("grouped speaker waveforms must not be empty.")
         grouped[self.audio_ref] = AudioItem(
             views={
                 AudioView.WAVEFORM: (_stack_waveforms(waveforms), sample_rate),
@@ -185,9 +193,10 @@ def materialize_qwen_tts_speech(
 ) -> Path:
     """Write a Qwen CustomVoice speech store aligned with a text dataset."""
 
+    speakers = _speaker_ids(speaker_ids)
     dataset_factory = SpeakerDatasetFactory(
         text_dataset_factory,
-        tuple(speaker_ids),
+        speakers,
         speaker_mode,
         text_ref,
     )
@@ -233,9 +242,10 @@ def materialize_qwen_tts_speaker_grid(
 ) -> Path:
     """Write an expanded Qwen speaker grid store for grouped text-level reads."""
 
+    speakers = _speaker_ids(speaker_ids)
     dataset_factory = SpeakerGridDatasetFactory(
         text_dataset_factory,
-        tuple(speaker_ids),
+        speakers,
         text_ref,
     )
     provider_factory = QwenProviderFactory(
@@ -275,10 +285,20 @@ def qwen_tts_speaker_grid(
 
     return GroupedQwenTTSSpeechDataset(
         AnyDataset(Spec(source=Source.STORE, path=str(Path(root).expanduser()), split=split)),
-        tuple(speaker_ids),
+        _speaker_ids(speaker_ids),
         text_ref=text_ref,
         audio_ref=audio_ref,
     )
+
+
+def _speaker_ids(value: Sequence[str]) -> tuple[str, ...]:
+    speaker_ids = tuple(value)
+    if not speaker_ids:
+        raise ValueError("speaker_ids must not be empty.")
+    for speaker_id in speaker_ids:
+        if not isinstance(speaker_id, str) or speaker_id == "":
+            raise ValueError("speaker_ids must contain non-empty strings.")
+    return speaker_ids
 
 
 def _text_item(value: object, ref: TextRef) -> TextItem:
@@ -303,19 +323,35 @@ def _waveform(value: object):
         raise TypeError("AudioView.WAVEFORM waveform must be a Tensor.")
     if isinstance(sample_rate, bool) or not isinstance(sample_rate, int):
         raise TypeError("AudioView.WAVEFORM sample rate must be an integer.")
+    if sample_rate <= 0:
+        raise ValueError("AudioView.WAVEFORM sample rate must be positive.")
+    if waveform.ndim != 2:
+        raise ValueError("AudioView.WAVEFORM waveform must have shape [channel, time].")
     return waveform, sample_rate
 
 
 def _stack_waveforms(waveforms: Sequence[Any]):
     import torch
-    import torch.nn.functional as F
 
     if not waveforms:
         raise ValueError("speaker waveform list must not be empty.")
-    max_length = max(int(waveform.shape[-1]) for waveform in waveforms)
+    prefix_shape = tuple(waveforms[0].shape[:-1])
+    lengths: list[int] = []
+    for offset, waveform in enumerate(waveforms):
+        if tuple(waveform.shape[:-1]) != prefix_shape:
+            raise ValueError(
+                f"speaker waveform {offset} has shape {tuple(waveform.shape)}; "
+                f"expected prefix shape {prefix_shape}."
+            )
+        lengths.append(int(waveform.shape[-1]))
+    max_length = max(lengths)
+    if all(length == max_length for length in lengths):
+        return torch.stack(tuple(waveforms), dim=0)
+    import torch.nn.functional as F
+
     padded = [
-        F.pad(waveform, (0, max_length - int(waveform.shape[-1])))
-        for waveform in waveforms
+        F.pad(waveform, (0, max_length - length))
+        for waveform, length in zip(waveforms, lengths)
     ]
     return torch.stack(padded, dim=0)
 
@@ -323,4 +359,4 @@ def _stack_waveforms(waveforms: Sequence[Any]):
 def _speaker_lengths(lengths: Sequence[int]):
     import torch
 
-    return torch.tensor(tuple(lengths), dtype=torch.int64)
+    return torch.as_tensor(lengths, dtype=torch.int64)

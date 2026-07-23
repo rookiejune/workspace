@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from anydataset.types import AudioView, Modality, Role, Sample, TextItem, TextView
+from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
 
 from zhuyin.datasets.qwen_tts_speech import (
     materialize_qwen_tts_speaker_grid,
@@ -91,8 +91,8 @@ def export_grouped_wavs(
     samples: list[dict[str, Any]] = []
     for sample_index in range(len(dataset)):
         sample = dataset[sample_index]
-        text = sample[Role.DEFAULT, Modality.TEXT].views[TextView.TEXT]
-        audio = sample[Role.DEFAULT, Modality.AUDIO]
+        text = _text_item(sample[Role.DEFAULT, Modality.TEXT]).views[TextView.TEXT]
+        audio = _audio_item(sample[Role.DEFAULT, Modality.AUDIO])
         waveform, sample_rate = audio.views[AudioView.WAVEFORM]
         speakers = tuple(audio.views[AudioView.SPEAKERS])
         lengths = audio.views[AudioView.SPEAKER_LENGTHS].tolist()
@@ -138,13 +138,24 @@ def write_wav(path: Path, waveform: torch.Tensor, sample_rate: int) -> None:
         handle.writeframes(frames)
 
 
+def _text_item(value: object) -> TextItem:
+    if not isinstance(value, TextItem):
+        raise TypeError("sample text entry must be a TextItem.")
+    return value
+
+
+def _audio_item(value: object) -> AudioItem:
+    if not isinstance(value, AudioItem):
+        raise TypeError("sample audio entry must be an AudioItem.")
+    return value
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    default_root = dynamic_home() / "debug" / "qwen_tts_speaker_grid_smoke"
-    parser.add_argument("--text", action="append", default=None)
-    parser.add_argument("--speaker-id", action="append", default=None)
-    parser.add_argument("--output-dir", type=Path, default=default_root / "store")
-    parser.add_argument("--export-dir", type=Path, default=default_root / "wavs")
+    parser.add_argument("--text", action="append", type=_non_empty_str, default=None)
+    parser.add_argument("--speaker-id", action="append", type=_non_empty_str, default=None)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--export-dir", type=Path, default=None)
     parser.add_argument("--split", default="train")
     parser.add_argument("--model", default=None)
     parser.add_argument("--language", default="Auto")
@@ -158,6 +169,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
+    if args.output_dir is None or args.export_dir is None:
+        default_root = dynamic_home() / "debug" / "qwen_tts_speaker_grid_smoke"
+        if args.output_dir is None:
+            args.output_dir = default_root / "store"
+        if args.export_dir is None:
+            args.export_dir = default_root / "wavs"
     if args.text is None:
         args.text = list(DEFAULT_TEXTS)
     if args.speaker_id is None:
@@ -182,10 +199,12 @@ def _load_options(args: argparse.Namespace) -> dict[str, object]:
 
 def _runtime_kwargs(args: argparse.Namespace) -> dict[str, object]:
     kwargs: dict[str, object] = {}
-    for name in ("top_k", "top_p", "temperature"):
-        value = getattr(args, name)
-        if value is not None:
-            kwargs[name] = value
+    if args.top_k is not None:
+        kwargs["top_k"] = args.top_k
+    if args.top_p is not None:
+        kwargs["top_p"] = args.top_p
+    if args.temperature is not None:
+        kwargs["temperature"] = args.temperature
     return kwargs
 
 
@@ -201,6 +220,12 @@ def _positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive.")
     return parsed
+
+
+def _non_empty_str(value: str) -> str:
+    if value == "":
+        raise argparse.ArgumentTypeError("value must be non-empty.")
+    return value
 
 
 def _safe_name(value: str) -> str:
