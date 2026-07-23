@@ -39,7 +39,13 @@ jobs/fudan/filter_wmt19_tts_speech.sh
 jobs/fudan/filter_wmt19_tts_translation.sh
 jobs/fudan/filter_wmt19_tts_speech_translation.sh
 jobs/fudan/prepare_wmt19_tts_longcat_bpe.sh
+jobs/fudan/speech_to_speech_env.sh
 ```
+
+`jobs/fudan/speech_to_speech_env.sh` contains the Fudan machine defaults shared
+by `speech-to-speech/jobs/011/*.sh` and `speech-to-speech/jobs/013/*.sh`: Python selection, Hugging Face cache roots,
+Qwen checkpoint discovery, and optional dataset-root override helpers. Keep
+these physical launch defaults in workspace instead of the experiment repo.
 
 `jobs/hz/` and `jobs/us/` are placeholders. Add wrappers
 there only when the matching `src/zhuyin/_locations/<location>.py` profile and
