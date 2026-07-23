@@ -24,6 +24,7 @@ from anydataset.provider.moss_tts import MossTTSProvider
 from anydataset.store import DatasetWriter, ModalityMaterializer
 from anydataset.types import (
     AudioItem,
+    AudioMeta,
     AudioView,
     Modality,
     Role,
@@ -268,7 +269,10 @@ def reference_audio(item: AudioItem, seconds: float | None) -> AudioItem:
     clipped = torch.as_tensor(waveform)[..., :sample_count]
     return AudioItem(
         views={AudioView.WAVEFORM: (clipped, int(sample_rate))},
-        meta=item.meta,
+        meta={
+            **item.meta,
+            AudioMeta.DURATION: float(clipped.shape[-1]) / float(sample_rate),
+        },
     )
 
 

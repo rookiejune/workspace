@@ -81,7 +81,6 @@ def wmt19_tts_codec(
         store_dir=store_dir,
         root=root,
         split=split,
-        merge_base=resolved_codec is Codec.LONGCAT,
         transforms=_longcat_transforms() if resolved_codec is Codec.LONGCAT else None,
     )
 
@@ -126,19 +125,13 @@ def _store_view(
     store_dir: str,
     root: str | PathLike[str] | None = None,
     split: str = "train",
-    merge_base: bool = False,
     transforms=None,
 ) -> AnyDataset:
-    view = _store_dataset(
+    return _store_dataset(
         store_dir=store_dir,
         root=root,
         split=split,
         transforms=transforms,
-    )
-    if not merge_base:
-        return view
-    return view.merge(
-        _store_dataset(store_dir=_TTS_STORE_DIR, root=root, split=split)
     )
 
 

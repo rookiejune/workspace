@@ -338,6 +338,37 @@ PYTHONPATH=src:../third_party/anytrain/src:../third_party/anydataset/src \
 python scripts/prepare_wmt19_tts_bpe.py --sample-limit 1000
 ```
 
+## Duration metadata 迁移
+
+已有 store 可以在不重写 payload shard 的情况下补充 `AudioMeta.DURATION`。waveform
+store 直接用采样点数和采样率计算秒数：
+
+```bash
+python scripts/migrate_store_audio_duration.py waveform \
+  "$STATIC_HOME/datasets/wmt19_tts/base"
+```
+
+codec store 使用已有 frame 数和固定 frame rate 计算秒数，迁移过程不加载 codec 模型：
+
+```bash
+python scripts/migrate_store_audio_duration.py codec \
+  "$STATIC_HOME/datasets/wmt19_tts/longcat" \
+  --codec longcat
+
+python scripts/migrate_store_audio_duration.py codec \
+  "$STATIC_HOME/datasets/wmt19_tts/stable-1x46656_400bps" \
+  --codec stable
+
+python scripts/migrate_store_audio_duration.py codec \
+  "$STATIC_HOME/datasets/wmt19_tts/unicodec" \
+  --codec unicodec
+```
+
+脚本内注册的默认值是 LongCat 50 Hz、Stable Codec 25 Hz、UniCodec 75 Hz；若 store 使用不同 codec
+契约，通过 `--frame-rate` 显式覆盖。默认只补缺失 metadata，原子替换
+`samples.parquet`，并保留 `samples.before-duration.parquet` 备份。`--dry-run` 只统计
+待迁移 audio item，不读取 payload。
+
 代码里先通过 workspace 入口定位准确 artifact，再显式加载 tokenizer：
 
 ```python

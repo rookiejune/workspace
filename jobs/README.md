@@ -40,6 +40,7 @@ jobs/fudan/filter_wmt19_tts_translation.sh
 jobs/fudan/filter_wmt19_tts_speech_translation.sh
 jobs/fudan/prepare_wmt19_tts_longcat_bpe.sh
 jobs/fudan/speech_to_speech_env.sh
+jobs/fudan/prepare_qwen_tts_speaker_grid_smoke.sh
 ```
 
 `jobs/fudan/speech_to_speech_env.sh` contains the Fudan machine defaults shared
@@ -73,4 +74,12 @@ Debug BPE runs can keep their own artifact names by limiting samples:
 
 ```bash
 jobs/fudan/prepare_wmt19_tts_longcat_bpe.sh --sample-limit 1000
+```
+
+Qwen TTS speaker-grid smoke writes two text samples across two Qwen speakers and
+exports grouped wav files under
+`$DYNAMIC_HOME/debug/qwen_tts_speaker_grid_smoke/wavs`:
+
+```bash
+jobs/fudan/prepare_qwen_tts_speaker_grid_smoke.sh
 ```

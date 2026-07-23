@@ -93,8 +93,7 @@ def test_wmt19_tts_codec_longcat_fudan_default_uses_store(
     assert dataset.spec.source == Source.STORE
     assert dataset.spec.path == "/data/static/datasets/wmt19_tts/longcat"
     assert dataset.spec.split == "train"
-    assert dataset.merged is not None
-    assert dataset.merged.spec.path == "/data/static/datasets/wmt19_tts/base"
+    assert dataset.merged is None
 
 
 def test_longcat_store_transform_accepts_anytrain_codes() -> None:

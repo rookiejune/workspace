@@ -16,6 +16,7 @@ src/zhuyin/
     aut.py                       # WMT19 TTS prepared Qwen2.5 AuT target 入口
     _aut_store.py                # prepared AuT manifest/index/payload 严格读取
     common_voice.py              # Common Voice 逻辑数据集入口
+    qwen_tts_speech.py           # Qwen speaker-grid TTS 生成与按 text 聚合读取
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
     _wmt19_tts_prepare.py        # prepare 服务
     _wmt19_tts_codec.py          # LongCat / DAC / Stable Codec / UniCodec view 生成服务
@@ -124,6 +125,14 @@ wmt19_tts_unicodec(*, root=None, split="train")
 `stable-1x46656_400bps/` 等逻辑视图。Stable Codec 的目录名包含 posthoc
 quantizer preset；旧 `stable/` native-FSQ store 不在公开 loader 的兼容范围内。`root` 不表示
 具体 view 目录，也不覆盖 location 默认来源。
+
+Qwen TTS speaker-grid 入口用于把任意 text dataset 生成多 speaker waveform。物理 store
+按 `(text_index, speaker_id)` 展开，公开 loader 再按 text 聚合：
+
+    materialize_qwen_tts_speaker_grid(text_dataset_factory=..., speaker_ids=..., output_dir=...)
+    qwen_tts_speaker_grid(root=..., speaker_ids=..., split="train")
+
+完整契约见 [docs/datasets/qwen_tts_speech.md](datasets/qwen_tts_speech.md)。
 
 ### Tokenizer Artifacts
 

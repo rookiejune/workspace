@@ -171,7 +171,7 @@ def prepare_longcat(
         split=split,
         store_dir=LONGCAT_STORE_DIR,
         provider_factory=LongCatFactory(),
-        keep_text=False,
+        keep_text=True,
         devices=devices,
         max_shard_samples=max_shard_samples,
         batch_size=batch_size,

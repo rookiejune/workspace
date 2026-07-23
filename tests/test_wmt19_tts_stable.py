@@ -10,7 +10,7 @@ from zhuyin.datasets import _wmt19_tts_stable as stable
 from zhuyin.datasets import _wmt19_tts_store as store
 
 
-def test_prepare_longcat_uses_code_only_store(
+def test_prepare_longcat_keeps_source_and_target_text(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -42,7 +42,13 @@ def test_prepare_longcat_uses_code_only_store(
     )
 
     assert calls["output"] == tmp_path / "longcat"
-    assert calls["init"]["keep_schema"] is None
+    assert set(calls["init"]["keep_schema"]) == {
+        (Role.SOURCE, Modality.TEXT),
+        (Role.TARGET, Modality.TEXT),
+    }
+    for requirement in calls["init"]["keep_schema"].values():
+        assert requirement.views == frozenset({TextView.TEXT})
+        assert requirement.meta == frozenset({TextMeta.LANG})
     assert calls["write"]["dataset_factory"]() == {
         "root": tmp_path,
         "split": "dev",
