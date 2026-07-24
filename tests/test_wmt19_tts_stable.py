@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
 from anydataset.types import AudioView, Modality, Role, TextMeta, TextView
 
-from zhuyin.datasets import _wmt19_tts_codec as service
 from zhuyin.datasets import _wmt19_tts_stable as stable
-from zhuyin.datasets import _wmt19_tts_store as store
+
+SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import _wmt19_tts_codec as service  # noqa: E402
+import _wmt19_tts_store as store  # noqa: E402
 
 
 def test_prepare_longcat_keeps_source_and_target_text(

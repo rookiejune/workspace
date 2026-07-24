@@ -18,13 +18,7 @@ src/zhuyin/
     common_voice.py              # Common Voice 逻辑数据集入口
     qwen_tts_speech.py           # Qwen speaker-grid TTS 生成与按 text 聚合读取
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
-    _wmt19_tts_prepare.py        # prepare 服务
-    _wmt19_tts_codec.py          # LongCat / DAC / Stable Codec / UniCodec view 生成服务
     _wmt19_tts_stable.py         # Stable Codec quantizer preset 与 store identity
-    _wmt19_tts_filter.py         # filter 服务
-    _wmt19_tts_bpe.py            # BPE 语料与训练服务
-    _wmt19_tts_io.py             # store 状态和报告 IO
-    _wmt19_tts_store.py          # 标准 store root 和 dataset factory
   tokenizers/
     _codec_bpe_artifact.py       # BPE 训练默认值和 artifact 命名
     codec_bpe.py                 # tokenizer artifact 定位与加载
@@ -33,7 +27,10 @@ scripts/
   prepare_wmt19_tts_codec_view.py # WMT19 codec view 统一入口：longcat/dac/stable/unicodec
   prepare_wmt19_tts_bpe.py       # WMT19 LongCat semantic BPE 入口
   filter_wmt19_tts.py            # WMT19 过滤任务统一入口：speech/translation/speech-translation
-  _*.py                          # 入口复用的私有 argparse、服务调用和 summary 打印 helper
+  _wmt19_tts_codec.py            # LongCat / DAC / Stable Codec / UniCodec view 生成 workflow
+  _wmt19_tts_io.py               # store 状态和报告 IO
+  _wmt19_tts_store.py            # 标准 store dataset factory 和脚本 root 解析
+  _*.py                          # 入口复用的私有 argparse、workflow 和 summary helper
 jobs/
   env.sh                         # 共享 workspace 环境解析，不含任务逻辑
   fudan/*.sh                     # Fudan 提交入口，调用统一 scripts
@@ -154,22 +151,24 @@ codec_bpe(path) -> CodecBPE
 artifact 名的转换属于 BPE 训练服务，不暴露给普通加载方。这样训练配置和对象加载不会形成
 两套重叠参数入口。
 
-## Private Services
+## Script Workflows
 
-WMT19 TTS 的 prepare、codec、filter 和 BPE 规则放在
-`src/zhuyin/datasets/_wmt19_tts_*.py`。
-私有服务层可以依赖 `anydataset` 和 `anytrain` 的公开接口，但不依赖 `argparse.Namespace`，
-不解析 CLI 参数，也不打印命令行 summary。
+WMT19 TTS 的 prepare、codec、filter 和 BPE 规则放在 `scripts/` 私有模块中。`src`
+只提供稳定 loader、路径解析和对象契约，不承接数据构建、过滤、模型推理或报告写入规则。
+
+脚本层可以依赖 `anydataset` 和 `anytrain` 的公开接口，也可以依赖 `src` 的公开入口来拿到
+具体逻辑对象。与 WMT19 资产布局、report 命名、物化顺序或筛选阈值相关的抽象优先放在
+`scripts/_*.py`，不要反向塞进 `src/zhuyin/datasets/`。
 
 公开 prepare 脚本按 TTS、codec-view 和 BPE 三件事分开；codec-view 内部再用子命令选择
 LongCat、DAC、Stable Codec 或 UniCodec。同一件事不再保留多个 location-neutral Python
 入口。私有 helper 使用 `_` 前缀，只供公开入口和测试复用。
 
-脚本只负责：
+公开脚本入口负责：
 
 1. 定义该入口独有的 argparse 参数。
-2. 把参数转换成服务层的严格类型参数。
-3. 调用服务并打印或写出顶层 summary。
+2. 把参数转换成 scripts 私有 workflow/helper 的严格类型参数。
+3. 调用 workflow 并打印或写出顶层 summary。
 
 重复的 store ready 检查、manifest 读取和 JSON/JSONL IO 放在 `_wmt19_tts_io.py`。业务规则
 不放进 IO helper。新增结构优先使用 `TypedDict`、普通不可变值或简单 callable class；需要
@@ -192,7 +191,7 @@ WMT19 数据处理脚本统一使用 `--root` 表示数据集根目录。BPE 输
 1. 合并 `zhuyin.env` 实现，确保公开导入只有一个物理来源。
 2. 移除公开 dataset profile，一次性迁移 WMT19 loader、所有脚本调用和测试。
 3. 一次性迁移 `codec_bpe_path(root=..., artifact=...)`、BPE 训练脚本和测试。
-4. 把 prepare/codec/filter/BPE 纯逻辑移入私有服务模块，删除脚本间重复 helper。
+4. 把 prepare/codec/filter/BPE 纯逻辑整理成 `scripts/` 私有 workflow，删除入口间重复 helper。
 5. 最后整理 job 参数和运行文档，不在接口迁移期间保留静默兼容分支。
 
 每一步的完成标准是：公开入口可以导入，默认参数可以构造对象，相关脚本可以执行

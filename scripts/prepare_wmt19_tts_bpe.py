@@ -16,7 +16,7 @@ from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from anydataset.types import AudioView, Modality, Role, Sample
+from anydataset.types import AudioItem, AudioView, Modality, Role, Sample
 
 from zhuyin.datasets.wmt19_tts import Codec, wmt19_tts_codec
 from zhuyin.env import context
@@ -71,11 +71,12 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     if artifact_dir.exists() and args.overwrite:
         shutil.rmtree(artifact_dir)
 
-    dataset = wmt19_tts_codec(
+    raw_dataset = wmt19_tts_codec(
         codec=Codec.LONGCAT,
         root=args.root,
         split=args.split,
     )
+    dataset = cast(Sequence[Sample], raw_dataset)
     from anytrain.tokenizer import CodecBPE
 
     if (artifact_dir / STATE_FILE).exists():
@@ -91,7 +92,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         )
         artifact_dir.mkdir(parents=True, exist_ok=False)
         bpe.save_pretrained(artifact_dir)
-        write_meta(artifact_dir, args, dataset.spec.to_dict(), codebook_sizes)
+        write_meta(artifact_dir, args, raw_dataset.spec.to_dict(), codebook_sizes)
     return summarize(artifact_dir, bpe, dataset, sample_limit=args.sample_limit)
 
 
@@ -122,7 +123,8 @@ def corpus(
 def frames_for(sample: Sample, role: Role) -> list[list[int]]:
     """Return LongCat semantic ids for one role as BPE frames."""
 
-    view = sample[role, Modality.AUDIO].views[AudioView.LONGCAT]
+    audio = cast(AudioItem, sample[role, Modality.AUDIO])
+    view = audio.views[AudioView.LONGCAT]
     values = view[:, 0].reshape(-1).detach().cpu().tolist()
     return [[int(value)] for value in values]
 

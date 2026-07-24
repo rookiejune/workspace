@@ -9,17 +9,18 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from zhuyin.datasets._wmt19_tts_codec import (
+from _wmt19_tts_codec import (
     prepare_dac,
     prepare_stable_codec,
     prepare_unicodec,
 )
-from zhuyin.datasets._wmt19_tts_io import Stage, write_json
+from _wmt19_tts_io import Stage, write_json
+from _wmt19_tts_store import resolve_root
+
 from zhuyin.datasets._wmt19_tts_stable import (
     DEFAULT_STABLE_QUANTIZER,
     StableQuantizer,
 )
-from zhuyin.datasets._wmt19_tts_store import resolve_root
 from zhuyin.env import context
 
 Prepare = Callable[..., Stage]

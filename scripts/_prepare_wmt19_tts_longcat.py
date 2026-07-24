@@ -8,9 +8,10 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from zhuyin.datasets._wmt19_tts_codec import prepare_longcat
-from zhuyin.datasets._wmt19_tts_io import write_json
-from zhuyin.datasets._wmt19_tts_store import resolve_root
+from _wmt19_tts_codec import prepare_longcat
+from _wmt19_tts_io import write_json
+from _wmt19_tts_store import resolve_root
+
 from zhuyin.env import context
 
 

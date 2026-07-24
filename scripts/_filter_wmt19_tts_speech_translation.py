@@ -22,12 +22,12 @@ if __package__:
 else:
     import _filter_wmt19_tts_speech as speech_filter
     import _filter_wmt19_tts_translation as translation_filter
+from _wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
+from _wmt19_tts_store import StoreFactory, resolve_root
 from anydataset import FilterRule
 from anydataset.filter import FilteredDataset
 
 from zhuyin._compat import StrEnum
-from zhuyin.datasets._wmt19_tts_io import preview_metrics, write_json, write_metrics_jsonl
-from zhuyin.datasets._wmt19_tts_store import StoreFactory, resolve_root
 from zhuyin.env import context, static_home
 
 

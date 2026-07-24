@@ -8,8 +8,6 @@ import pytest
 import torch
 from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
 
-from zhuyin.datasets import _wmt19_tts_store as wmt19_store
-
 SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -18,6 +16,7 @@ import _filter_wmt19_tts_speech_translation as speech_translation_filter  # noqa
 import _filter_wmt19_tts_translation as translation_filter  # noqa: E402
 import _prepare_wmt19_tts_codec as codec_prepare  # noqa: E402
 import _prepare_wmt19_tts_longcat as longcat_prepare  # noqa: E402
+import _wmt19_tts_store as wmt19_store  # noqa: E402
 import filter_wmt19_tts  # noqa: E402
 import prepare_wmt19_tts  # noqa: E402
 import prepare_wmt19_tts_codec_view  # noqa: E402

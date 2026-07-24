@@ -27,9 +27,9 @@ from zhuyin import wmt19_tts
 
 ## 目录约定
 
-- `src/` 存加载入口和轻量适配逻辑。
+- `src/` 存加载入口和轻量适配逻辑，只负责提供已经处理好的具体逻辑对象、路径解析和稳定返回契约。
 - `src/zhuyin/datasets/` 存数据集相关入口；新增数据集按对象或任务建子模块。
-- `scripts/` 展示如何进一步处理这些对象，例如数据过滤、格式转换和模型推理。WMT19 prepare 入口按 TTS、codec-view、BPE 三件事分开；同一件事只保留一个公开脚本入口，具体动作通过子命令区分；私有 helper 使用 `_` 前缀。脚本应可传参、逻辑薄、主要复用 `src/` 入口，不写 location 专属路径、镜像或设备默认值。
+- `scripts/` 提供可复用的构建、过滤、格式转换和模型推理 workflow。WMT19 prepare 入口按 TTS、codec-view、BPE 三件事分开；同一件事只保留一个公开脚本入口，具体动作通过子命令区分；私有 helper 使用 `_` 前缀。脚本应可传参、模块化并复用 `src` 入口拿到具体对象，不写 location 专属路径、镜像或设备默认值。
 - `jobs/` 按 location 存与 `scripts/` 对应的可提交任务。shell wrapper 只负责环境激活、机器相关变量和最终 Python 调用，Python 命令末尾保留 `"$@"`。
 - `notebooks/` 存交互式调试，目录和命名尽量与 `src/` 对称。
     1. 不要通过sys.path.insert加载包，而是应该在环境里安装。
@@ -38,11 +38,11 @@ from zhuyin import wmt19_tts
 ## 实现约定
 
 - 每个对外模块都要有模块文档，说明它提供的能力、输入输出和边界，不只记录内部实现步骤。
-- 业务规则放在服务层或清晰的 helper 中，脚本、notebook 和 job wrapper 只做编排。
-- 只在本层处理加载、路径、缓存和对象组装；通用数据结构、读写协议和可复用算法优先放在 `third_party/`。
+- 加载入口只在本层处理加载、路径、缓存和对象组装；构建、过滤、物化和报告规则放在 `scripts/` 的 workflow/helper 中。
+- 通用数据结构、读写协议和可复用算法优先放在 `third_party/`；仍然依赖本工作区对象命名、路径契约或资产布局的逻辑留在 `scripts/`。
 - `location()`、`static_home()`、`dynamic_home()` 和 `datasets_home()` 纯解析并返回值，不修改 `os.environ`；`context()` 只用于确实依赖环境变量的第三方代码或脚本。
 - `zhuyin.env` 负责公开解析机器 home 和探测 marker；当前只实现 Fudan，具体 location 常量放在 `src/zhuyin/_locations/` 对应文件中，数据集 export、模型 checkpoint 等具体资产路径归对应资源模块。
-- 不在 `workspace` 中写大量训练、评测或实验分支逻辑；这些应进入具体工程或实验目录。
+- 不在 `src` 中写大量训练、评测、构建或实验分支逻辑；这些应进入 `scripts/`、具体工程或实验目录。
 - 类型提示要覆盖入口参数和返回值。需要避免重 import 时，用 `TYPE_CHECKING` 隔离。
 - 发现不属于当前任务所有权的 `third_party/` 或其他工程 `src/` 问题时，先按顶层 `AGENTS.md` 给出推荐方案并确认，不直接越界修改。
 

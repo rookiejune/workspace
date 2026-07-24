@@ -18,6 +18,17 @@ from pathlib import Path
 from typing import Any, cast
 
 import torch
+from _wmt19_tts_io import (
+    Stage,
+    is_ready_store,
+    ready_stage,
+    store_sample_count,
+    write_json,
+)
+from _wmt19_tts_io import (
+    stage as new_stage,
+)
+from _wmt19_tts_store import resolve_root
 from anydataset import AnyDataset, Preset
 from anydataset.dataset import MapStyleABC
 from anydataset.provider.moss_tts import MossTTSProvider
@@ -36,17 +47,6 @@ from anydataset.types import (
 )
 from anytrain.tts import TTSOptions
 
-from zhuyin.datasets._wmt19_tts_io import (
-    Stage,
-    is_ready_store,
-    ready_stage,
-    store_sample_count,
-    write_json,
-)
-from zhuyin.datasets._wmt19_tts_io import (
-    stage as new_stage,
-)
-from zhuyin.datasets._wmt19_tts_store import resolve_root
 from zhuyin.datasets.wmt19_tts import WMT19_TTS
 from zhuyin.env import context, static_home
 
@@ -222,7 +222,7 @@ def limited_wmt19_samples(
     offset: int,
     limit: int,
 ) -> Iterable[Sample]:
-    dataset = Preset.WMT19.create(
+    dataset = cast(Any, Preset.WMT19).create(
         split=split,
         source_lang=source_lang,
         target_lang=target_lang,
