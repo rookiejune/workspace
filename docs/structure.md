@@ -16,7 +16,7 @@ src/zhuyin/
     aut.py                       # WMT19 TTS prepared Qwen2.5 AuT target 入口
     _aut_store.py                # prepared AuT manifest/index/payload 严格读取
     common_voice.py              # Common Voice 逻辑数据集入口
-    qwen_tts_speech.py           # Qwen speaker-grid TTS 生成与按 text 聚合读取
+    qwen_tts_speech.py           # prepared Qwen speaker-grid 按 text 聚合读取
     wmt19_tts.py                 # WMT19 TTS 与 codec 视图入口
     _wmt19_tts_stable.py         # Stable Codec quantizer preset 与 store identity
   tokenizers/
@@ -30,6 +30,7 @@ scripts/
   _wmt19_tts_codec.py            # LongCat / DAC / Stable Codec / UniCodec view 生成 workflow
   _wmt19_tts_io.py               # store 状态和报告 IO
   _wmt19_tts_store.py            # 标准 store dataset factory 和脚本 root 解析
+  _qwen_tts_speech.py            # 多 text-ref speaker assignment 与 Qwen TTS 物化 workflow
   _*.py                          # 入口复用的私有 argparse、workflow 和 summary helper
 jobs/
   env.sh                         # 共享 workspace 环境解析，不含任务逻辑
@@ -123,13 +124,14 @@ wmt19_tts_unicodec(*, root=None, split="train")
 quantizer preset；旧 `stable/` native-FSQ store 不在公开 loader 的兼容范围内。`root` 不表示
 具体 view 目录，也不覆盖 location 默认来源。
 
-Qwen TTS speaker-grid 入口用于把任意 text dataset 生成多 speaker waveform。物理 store
-按 `(text_index, speaker_id)` 展开，公开 loader 再按 text 聚合：
+Qwen TTS speaker-grid loader 读取已经按 `(text_index, speaker_id)` 展开的物理 store，
+再按 text 聚合：
 
-    materialize_qwen_tts_speaker_grid(text_dataset_factory=..., speaker_ids=..., output_dir=...)
     qwen_tts_speaker_grid(root=..., speaker_ids=..., split="train")
 
-完整契约见 [docs/datasets/qwen_tts_speech.md](datasets/qwen_tts_speech.md)。
+通用 speaker assignment 属于 `anydataset.dataset`；Qwen 物化组合位于
+`scripts/_qwen_tts_speech.py`。完整契约见
+[docs/datasets/qwen_tts_speech.md](datasets/qwen_tts_speech.md)。
 
 ### Tokenizer Artifacts
 

@@ -12,12 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from _qwen_tts_speech import materialize_qwen_tts_speaker_grid
 from anydataset.types import AudioItem, AudioView, Modality, Role, Sample, TextItem, TextView
 
-from zhuyin.datasets.qwen_tts_speech import (
-    materialize_qwen_tts_speaker_grid,
-    qwen_tts_speaker_grid,
-)
+from zhuyin.datasets.qwen_tts_speech import qwen_tts_speaker_grid
 from zhuyin.env import context, dynamic_home
 
 DEFAULT_TEXTS = (

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+from typing import Any
+
 import pytest
-import torch
+from anydataset.dataset import (
+    GroupedSpeakerAudioDataset,
+    SpeakerAssignment,
+    SpeakerCartesianDataset,
+    SpeakerIdDataset,
+)
 from anydataset.types import (
     AudioItem,
-    AudioMeta,
     AudioView,
     Modality,
     Role,
@@ -13,145 +21,177 @@ from anydataset.types import (
     TextView,
 )
 
-from zhuyin.datasets.qwen_tts_speech import (
-    GroupedQwenTTSSpeechDataset,
-    SpeakerDatasetFactory,
-    SpeakerGridDatasetFactory,
-)
+from zhuyin.datasets import qwen_tts_speech as loader
+
+SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+import _qwen_tts_speech as workflow  # noqa: E402
 
 
-def test_speaker_dataset_factory_assigns_speaker_ids() -> None:
+def test_speaker_dataset_factory_assigns_multiple_text_references() -> None:
+    source_ref = (Role.SOURCE, Modality.TEXT)
+    target_ref = (Role.TARGET, Modality.TEXT)
+
     def dataset_factory():
         return [
-            {(Role.DEFAULT, Modality.TEXT): TextItem(views={TextView.TEXT: "hello"})}
+            {
+                source_ref: TextItem(views={TextView.TEXT: "你好"}),
+                target_ref: TextItem(views={TextView.TEXT: "hello"}),
+                (Role.DEFAULT, Modality.AUDIO): AudioItem(
+                    views={AudioView.WAVEFORM: "unselected"}
+                ),
+            }
         ]
 
-    factory = SpeakerDatasetFactory(
+    factory = workflow.SpeakerDatasetFactory(
         dataset_factory,
-        ("Vivian",),
-        "aligned",
-        (Role.DEFAULT, Modality.TEXT),
+        {
+            source_ref: SpeakerAssignment(("Vivian",)),
+            target_ref: SpeakerAssignment(("Ryan",)),
+        },
     )
 
-    item = factory()[0][Role.DEFAULT, Modality.TEXT]
+    dataset = factory()
+    sample = dataset[0]
 
-    assert isinstance(item, TextItem)
-    assert item.views[TextView.SPEAKERS] == "Vivian"
+    assert isinstance(dataset.dataset, SpeakerIdDataset)
+    assert set(sample) == {source_ref, target_ref}
+    assert sample[source_ref].views[TextView.SPEAKERS] == "Vivian"
+    assert sample[target_ref].views[TextView.SPEAKERS] == "Ryan"
 
 
-def test_speaker_dataset_factory_rejects_empty_speaker_ids() -> None:
+def test_speaker_dataset_factory_rejects_empty_assignments() -> None:
+    factory = workflow.SpeakerDatasetFactory(lambda: [], {})
+
+    with pytest.raises(ValueError, match="assignments must be a non-empty mapping"):
+        factory()
+
+
+def test_speaker_grid_factory_expands_selected_text_reference() -> None:
+    text_ref = (Role.DEFAULT, Modality.TEXT)
+
     def dataset_factory():
         return [
-            {(Role.DEFAULT, Modality.TEXT): TextItem(views={TextView.TEXT: "hello"})}
+            {
+                text_ref: TextItem(views={TextView.TEXT: "hello"}),
+                (Role.DEFAULT, Modality.AUDIO): AudioItem(
+                    views={AudioView.WAVEFORM: "unselected"}
+                ),
+            }
         ]
 
-    with pytest.raises(ValueError, match="speaker_ids must not be empty"):
-        SpeakerDatasetFactory(
-            dataset_factory,
-            (),
-            "cycle",
-            (Role.DEFAULT, Modality.TEXT),
-        )
-
-
-def test_speaker_grid_factory_expands_text_by_speaker() -> None:
-    def dataset_factory():
-        return [
-            {(Role.DEFAULT, Modality.TEXT): TextItem(views={TextView.TEXT: "hello"})},
-            {(Role.DEFAULT, Modality.TEXT): TextItem(views={TextView.TEXT: "world"})},
-        ]
-
-    factory = SpeakerGridDatasetFactory(
+    dataset = workflow.SpeakerGridDatasetFactory(
         dataset_factory,
         ("Vivian", "Ryan"),
-        (Role.DEFAULT, Modality.TEXT),
-    )
-    dataset = factory()
+        text_ref,
+    )()
 
-    assert len(dataset) == 4
-    first = dataset[0][Role.DEFAULT, Modality.TEXT]
-    second = dataset[1][Role.DEFAULT, Modality.TEXT]
-    third = dataset[2][Role.DEFAULT, Modality.TEXT]
-    assert isinstance(first, TextItem)
-    assert isinstance(second, TextItem)
-    assert isinstance(third, TextItem)
-    assert first.views[TextView.TEXT] == "hello"
-    assert first.views[TextView.SPEAKERS] == "Vivian"
-    assert first.meta[TextMeta.SOURCE_INDEX] == 0
-    assert second.views[TextView.SPEAKERS] == "Ryan"
-    assert second.meta[TextMeta.SOURCE_INDEX] == 0
-    assert third.views[TextView.TEXT] == "world"
-    assert third.meta[TextMeta.SOURCE_INDEX] == 1
+    assert isinstance(dataset.dataset, SpeakerCartesianDataset)
+    assert len(dataset) == 2
+    assert set(dataset[0]) == {text_ref}
+    assert dataset[0][text_ref].views[TextView.SPEAKERS] == "Vivian"
+    assert dataset[1][text_ref].views[TextView.SPEAKERS] == "Ryan"
+    assert dataset[0][text_ref].meta[TextMeta.SOURCE_INDEX] == 0
+    assert dataset[1][text_ref].meta[TextMeta.SOURCE_INDEX] == 0
 
 
-def test_grouped_qwen_tts_speech_dataset_groups_waveforms_by_text() -> None:
-    flat = [
-        _flat_sample("hello", "Vivian", 0, (torch.tensor([[1.0, 2.0]]), 24000)),
-        _flat_sample("hello", "Ryan", 0, (torch.tensor([[3.0]]), 24000)),
-        _flat_sample("world", "Vivian", 1, (torch.tensor([[4.0]]), 24000)),
-        _flat_sample("world", "Ryan", 1, (torch.tensor([[5.0, 6.0]]), 24000)),
-    ]
+def test_materialize_qwen_tts_speech_builds_multi_ref_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_ref = (Role.SOURCE, Modality.TEXT)
+    target_ref = (Role.TARGET, Modality.TEXT)
+    calls: dict[str, Any] = {}
 
-    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian", "Ryan"))
+    class FakeMaterializer:
+        def __init__(self, output_dir: Path, **kwargs: Any) -> None:
+            calls["output_dir"] = output_dir
+            calls["init"] = kwargs
 
-    assert len(grouped) == 2
-    first = grouped[0]
-    text = first[Role.DEFAULT, Modality.TEXT]
-    audio = first[Role.DEFAULT, Modality.AUDIO]
-    assert isinstance(text, TextItem)
-    assert isinstance(audio, AudioItem)
-    assert text.views[TextView.TEXT] == "hello"
-    assert text.meta[TextMeta.SOURCE_INDEX] == 0
-    assert audio.meta[AudioMeta.SPEAKER_ID] == ("Vivian", "Ryan")
-    waveform, sample_rate = audio.views[AudioView.WAVEFORM]
-    assert sample_rate == 24000
-    assert audio.views[AudioView.SPEAKERS] == ("Vivian", "Ryan")
-    assert torch.equal(audio.views[AudioView.SPEAKER_LENGTHS], torch.tensor([2, 1]))
-    assert torch.equal(
-        waveform,
-        torch.tensor([[[1.0, 2.0]], [[3.0, 0.0]]]),
-    )
+        def write(self, **kwargs: Any) -> Path:
+            calls["write"] = kwargs
+            return tmp_path / "ready"
 
-
-def test_grouped_qwen_tts_speech_dataset_rejects_invalid_sample_rate() -> None:
-    flat = [
-        _flat_sample("hello", "Vivian", 0, (torch.tensor([[1.0]]), 0)),
-    ]
-    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian",))
-
-    with pytest.raises(ValueError, match="sample rate must be positive"):
-        grouped[0]
-
-
-def test_grouped_qwen_tts_speech_dataset_rejects_non_2d_waveform() -> None:
-    flat = [
-        _flat_sample("hello", "Vivian", 0, (torch.tensor([1.0, 2.0]), 24000)),
-    ]
-    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian",))
-
-    with pytest.raises(ValueError, match=r"shape \[channel, time\]"):
-        grouped[0]
-
-
-def test_grouped_qwen_tts_speech_dataset_rejects_mismatched_channels() -> None:
-    flat = [
-        _flat_sample("hello", "Vivian", 0, (torch.ones(1, 2), 24000)),
-        _flat_sample("hello", "Ryan", 0, (torch.ones(2, 2), 24000)),
-    ]
-    grouped = GroupedQwenTTSSpeechDataset(flat, ("Vivian", "Ryan"))
-
-    with pytest.raises(ValueError, match="expected prefix shape"):
-        grouped[0]
-
-
-def _flat_sample(text: str, speaker_id: str, source_index: int, waveform):
-    return {
-        (Role.DEFAULT, Modality.TEXT): TextItem(
-            views={TextView.TEXT: text, TextView.SPEAKERS: speaker_id},
-            meta={TextMeta.SOURCE_INDEX: source_index},
-        ),
-        (Role.DEFAULT, Modality.AUDIO): AudioItem(
-            views={AudioView.WAVEFORM: waveform},
-            meta={AudioMeta.SPEAKER_ID: speaker_id},
-        ),
+    monkeypatch.setattr(workflow, "ModalityMaterializer", FakeMaterializer)
+    assignments = {
+        source_ref: SpeakerAssignment(("Vivian",), mode="cycle"),
+        target_ref: SpeakerAssignment(("Ryan",), mode="cycle"),
     }
+
+    result = workflow.materialize_qwen_tts_speech(
+        text_dataset_factory=lambda: [
+            {
+                source_ref: TextItem(views={TextView.TEXT: "你好"}),
+                target_ref: TextItem(views={TextView.TEXT: "hello"}),
+            }
+        ],
+        assignments=assignments,
+        output_dir=tmp_path / "store",
+        devices="cpu",
+    )
+
+    assert result == tmp_path / "ready"
+    assert set(calls["init"]["keep_schema"]) == {source_ref, target_ref}
+    dataset = calls["write"]["dataset_factory"]()
+    assert dataset[0][source_ref].views[TextView.SPEAKERS] == "Vivian"
+    assert dataset[0][target_ref].views[TextView.SPEAKERS] == "Ryan"
+    assert isinstance(calls["write"]["provider_factory"], workflow.QwenProviderFactory)
+    assert calls["write"]["devices"] == "cpu"
+
+
+def test_materialize_qwen_tts_speaker_grid_keeps_source_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, Any] = {}
+
+    class FakeMaterializer:
+        def __init__(self, _output_dir: Path, **kwargs: Any) -> None:
+            calls["init"] = kwargs
+
+        def write(self, **kwargs: Any) -> Path:
+            calls["write"] = kwargs
+            return tmp_path / "ready"
+
+    monkeypatch.setattr(workflow, "ModalityMaterializer", FakeMaterializer)
+    text_ref = (Role.DEFAULT, Modality.TEXT)
+
+    workflow.materialize_qwen_tts_speaker_grid(
+        text_dataset_factory=lambda: [
+            {text_ref: TextItem(views={TextView.TEXT: "hello"})}
+        ],
+        speaker_ids=("Vivian", "Ryan"),
+        output_dir=tmp_path / "store",
+    )
+
+    requirement = calls["init"]["keep_schema"][text_ref]
+    assert requirement.meta == frozenset({TextMeta.SOURCE_INDEX})
+    dataset = calls["write"]["dataset_factory"]()
+    assert dataset[0][text_ref].meta[TextMeta.SOURCE_INDEX] == 0
+    assert dataset[1][text_ref].meta[TextMeta.SOURCE_INDEX] == 0
+
+
+def test_qwen_tts_speaker_grid_loader_returns_generic_grouped_dataset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flat = [{}, {}]
+    calls: list[Any] = []
+
+    def fake_dataset(spec: Any):
+        calls.append(spec)
+        return flat
+
+    monkeypatch.setattr(loader, "AnyDataset", fake_dataset)
+
+    dataset = loader.qwen_tts_speaker_grid(
+        root=tmp_path,
+        speaker_ids=("Vivian", "Ryan"),
+        split="dev",
+    )
+
+    assert isinstance(dataset, GroupedSpeakerAudioDataset)
+    assert dataset.dataset is flat
+    assert calls[0].path == str(tmp_path)
+    assert calls[0].split == "dev"

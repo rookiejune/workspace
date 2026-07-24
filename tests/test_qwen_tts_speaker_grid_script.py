@@ -12,6 +12,7 @@ import pytest
 
 SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
 SCRIPT_PATH = SCRIPTS_DIR / "prepare_qwen_tts_speaker_grid.py"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 class _SpeakerGridScript(Protocol):
