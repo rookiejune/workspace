@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zhuyin import env
+from zhuyin import _locations, env
 from zhuyin._locations import fudan
 
 
@@ -41,10 +41,17 @@ def test_fudan_location_profile_matches_location_file() -> None:
     assert env.Location.FUDAN.dynamic_home == fudan.DYNAMIC_HOME
 
 
-def test_location_accepts_fudan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(env.LOCATION_ENV, env.Location.FUDAN.value)
+@pytest.mark.parametrize(
+    "item",
+    [env.Location.FUDAN, env.Location.HZ, env.Location.US],
+)
+def test_location_accepts_known_values(
+    monkeypatch: pytest.MonkeyPatch,
+    item: env.Location,
+) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, item.value)
 
-    assert env.location() is env.Location.FUDAN
+    assert env.location() is item
 
 
 def test_location_rejects_empty_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,6 +101,77 @@ def test_explicit_homes_override_fudan_location(monkeypatch: pytest.MonkeyPatch)
 
     assert env.static_home() == Path("/custom/static")
     assert env.dynamic_home() == Path("/custom/dynamic")
+
+
+@pytest.mark.parametrize("item", [env.Location.HZ, env.Location.US])
+def test_explicit_homes_allow_unimplemented_locations(
+    monkeypatch: pytest.MonkeyPatch,
+    item: env.Location,
+) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, item.value)
+    monkeypatch.setenv(env.STATIC_HOME_ENV, "/custom/static")
+    monkeypatch.setenv(env.DYNAMIC_HOME_ENV, "/custom/dynamic")
+
+    assert env.static_home() == Path("/custom/static")
+    assert env.dynamic_home() == Path("/custom/dynamic")
+
+
+@pytest.mark.parametrize("item", [env.Location.HZ, env.Location.US])
+def test_context_accepts_explicit_homes_for_unimplemented_locations(
+    item: env.Location,
+) -> None:
+    with env.context(
+        LOCATION=item.value,
+        STATIC_HOME="/custom/static",
+        DYNAMIC_HOME="/custom/dynamic",
+    ):
+        assert env.location() is item
+        assert env.static_home() == Path("/custom/static")
+        assert env.dynamic_home() == Path("/custom/dynamic")
+
+
+@pytest.mark.parametrize("item", [env.Location.HZ, env.Location.US])
+def test_unimplemented_locations_require_explicit_homes(
+    monkeypatch: pytest.MonkeyPatch,
+    item: env.Location,
+) -> None:
+    monkeypatch.setenv(env.LOCATION_ENV, item.value)
+    monkeypatch.delenv(env.STATIC_HOME_ENV, raising=False)
+    monkeypatch.delenv(env.DYNAMIC_HOME_ENV, raising=False)
+
+    with pytest.raises(NotImplementedError, match=item.value):
+        env.static_home()
+    with pytest.raises(NotImplementedError, match=item.value):
+        env.dynamic_home()
+
+
+@pytest.mark.parametrize("item", [env.Location.HZ, env.Location.US])
+def test_location_properties_raise_for_unimplemented_defaults(item: env.Location) -> None:
+    with pytest.raises(NotImplementedError, match=item.value):
+        _ = item.static_home
+    with pytest.raises(NotImplementedError, match=item.value):
+        _ = item.dynamic_home
+
+
+@pytest.mark.parametrize("name", ["hz", "us"])
+def test_location_profile_raises_for_unimplemented_locations(name: str) -> None:
+    match = name.upper() if name == "us" else "Hangzhou"
+    with pytest.raises(NotImplementedError, match=match):
+        _locations.profile(name)
+
+
+def test_location_registry_only_returns_implemented_profiles() -> None:
+    profiles = _locations.implemented_profiles()
+
+    assert tuple(profiles) == (env.Location.FUDAN.value,)
+    assert profiles[env.Location.FUDAN.value] == {
+        "static_home": fudan.STATIC_HOME,
+        "dynamic_home": fudan.DYNAMIC_HOME,
+    }
+
+
+def test_location_markers_only_include_implemented_markers() -> None:
+    assert _locations.markers() == ((fudan.MARKER, env.Location.FUDAN.value),)
 
 
 def test_train_home_uses_dynamic_train_root(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,41 +1,78 @@
-"""Private workspace location profiles.
+"""Workspace location profile registry.
 
-Only implemented locations expose physical homes and detection markers here.
-Add another location module in the same shape when that location is ready.
+The registry owns the stable top-level location API and loads concrete
+location modules lazily. Each location module exposes the same contract, while
+unimplemented profiles raise from their own module instead of being silently
+filtered at import time.
 """
 
 from __future__ import annotations
 
+from importlib import import_module
 from pathlib import Path
-from typing import TypedDict
+from typing import cast
 
-from . import fudan
+from ._types import LocationModule, LocationProfile
 
+DEFAULT_LOCATION = "fudan"
 
-class LocationProfile(TypedDict):
-    """Physical workspace roots for one location."""
-
-    static_home: Path
-    dynamic_home: Path
-
-
-DEFAULT_LOCATION = fudan.LOCATION
-LOCATION_PROFILES: dict[str, LocationProfile] = {
-    fudan.LOCATION: {
-        "static_home": fudan.STATIC_HOME,
-        "dynamic_home": fudan.DYNAMIC_HOME,
-    },
+_MODULES = {
+    "fudan": "zhuyin._locations.fudan",
+    "hz": "zhuyin._locations.hz",
+    "us": "zhuyin._locations.us",
 }
 
-# Detection order is part of the implemented location contract.
-DETECTION_MARKERS: tuple[tuple[Path, str], ...] = (
-    (fudan.MARKER, fudan.LOCATION),
-)
+
+def names() -> tuple[str, ...]:
+    """Return known location names in registry order."""
+
+    return tuple(_MODULES)
+
+
+def profile(name: str) -> LocationProfile:
+    """Return one location profile, raising if that profile is not implemented."""
+
+    return _module(name).profile()
+
+
+def markers() -> tuple[tuple[Path, str], ...]:
+    """Return detection markers for all modules that expose markers."""
+
+    items: list[tuple[Path, str]] = []
+    for name in names():
+        module = _module(name)
+        items.extend((marker, name) for marker in module.markers())
+    return tuple(items)
+
+
+def implemented_profiles() -> dict[str, LocationProfile]:
+    """Return only profiles with concrete default homes."""
+
+    profiles: dict[str, LocationProfile] = {}
+    for name in names():
+        try:
+            profiles[name] = profile(name)
+        except NotImplementedError:
+            continue
+    return profiles
+
+
+def _module(name: str) -> LocationModule:
+    try:
+        module_path = _MODULES[name]
+    except KeyError as e:
+        choices = ", ".join(names())
+        raise ValueError(f"location must be one of: {choices}.") from e
+    module = cast(object, import_module(module_path))
+    return cast(LocationModule, module)
 
 
 __all__ = [
     "DEFAULT_LOCATION",
-    "DETECTION_MARKERS",
-    "LOCATION_PROFILES",
+    "LocationModule",
     "LocationProfile",
+    "implemented_profiles",
+    "markers",
+    "names",
+    "profile",
 ]

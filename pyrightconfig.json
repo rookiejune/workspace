@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DetachHead/basedpyright/main/packages/pyright-internal/src/schemas/pyrightconfig.schema.json",
+  "include": ["src"],
+  "extraPaths": [
+    "src",
+    "../third_party/anydataset/src",
+    "../third_party/anytrain/src"
+  ],
+  "venvPath": "/Users/zhuyin/miniconda3/envs",
+  "venv": "py312",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard"
+}

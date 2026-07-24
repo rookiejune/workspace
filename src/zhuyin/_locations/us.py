@@ -7,11 +7,23 @@ and add the matching tests in the same change.
 
 from __future__ import annotations
 
+from pathlib import Path
 
-def profile() -> None:
+from ._types import LocationProfile
+
+LOCATION = "us"
+
+
+def profile() -> LocationProfile:
     """Raise until the US profile is implemented."""
 
     raise NotImplementedError("US location profile is not implemented.")
 
 
-__all__ = ["profile"]
+def markers() -> tuple[Path, ...]:
+    """Return no auto-detection markers until US is implemented."""
+
+    return ()
+
+
+__all__ = ["LOCATION", "markers", "profile"]

@@ -7,11 +7,23 @@ enabled, add the concrete homes and marker here, register it in
 
 from __future__ import annotations
 
+from pathlib import Path
 
-def profile() -> None:
+from ._types import LocationProfile
+
+LOCATION = "hz"
+
+
+def profile() -> LocationProfile:
     """Raise until the Hangzhou profile is implemented."""
 
     raise NotImplementedError("Hangzhou location profile is not implemented.")
 
 
-__all__ = ["profile"]
+def markers() -> tuple[Path, ...]:
+    """Return no auto-detection markers until Hangzhou is implemented."""
+
+    return ()
+
+
+__all__ = ["LOCATION", "markers", "profile"]

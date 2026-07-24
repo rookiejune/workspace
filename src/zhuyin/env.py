@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import warnings
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from enum import auto
 from os import PathLike
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Union
 
 from ._compat import StrEnum
-from ._locations import DEFAULT_LOCATION, DETECTION_MARKERS, LOCATION_PROFILES
+from ._locations import DEFAULT_LOCATION, implemented_profiles, markers, names
 
 LOCATION_ENV = "LOCATION"
 STATIC_HOME_ENV = "STATIC_HOME"
@@ -37,14 +37,16 @@ class Location(StrEnum):
     """Known machine locations."""
 
     FUDAN = auto()
+    HZ = auto()
+    US = auto()
 
     @property
     def static_home(self) -> Path:
-        return _HOMES[self][STATIC_HOME_ENV]
+        return _default_home(STATIC_HOME_ENV, self)
 
     @property
     def dynamic_home(self) -> Path:
-        return _HOMES[self][DYNAMIC_HOME_ENV]
+        return _default_home(DYNAMIC_HOME_ENV, self)
 
 
 _HOMES: dict[Location, dict[str, Path]] = {
@@ -52,15 +54,15 @@ _HOMES: dict[Location, dict[str, Path]] = {
         STATIC_HOME_ENV: profile["static_home"],
         DYNAMIC_HOME_ENV: profile["dynamic_home"],
     }
-    for name, profile in LOCATION_PROFILES.items()
+    for name, profile in implemented_profiles().items()
 }
 
 # Detection markers checked in order; FUDAN is also the fallback.
-_MARKERS = tuple((marker, Location(name)) for marker, name in DETECTION_MARKERS)
+_MARKERS = tuple((marker, Location(name)) for marker, name in markers())
 
 
 @contextmanager
-def context(**overrides: EnvValue) -> Iterator[None]:
+def context(**overrides: EnvValue) -> Generator[None]:
     """Temporarily apply resolved workspace environment variables.
 
     Each workspace variable resolves in one fixed order: explicit keyword
@@ -74,7 +76,7 @@ def context(**overrides: EnvValue) -> Iterator[None]:
     unset_names: set[str] = set()
     for name, value in overrides.items():
         if value is None:
-            source.pop(name, None)
+            _ = source.pop(name, None)
             if name not in WORKSPACE_ENV_NAMES:
                 unset_names.add(name)
         else:
@@ -92,13 +94,13 @@ def context(**overrides: EnvValue) -> Iterator[None]:
     previous = {name: os.environ.get(name) for name in set(updates) | unset_names}
     try:
         for name in unset_names:
-            os.environ.pop(name, None)
+            _ = os.environ.pop(name, None)
         os.environ.update(updates)
         yield
     finally:
         for name, value in previous.items():
             if value is None:
-                os.environ.pop(name, None)
+                _ = os.environ.pop(name, None)
             else:
                 os.environ[name] = value
 
@@ -159,7 +161,7 @@ def _location(environ: Mapping[str, str]) -> Location:
     try:
         return Location(value)
     except ValueError as e:
-        choices = ", ".join(item.value for item in Location)
+        choices = ", ".join(names())
         raise ValueError(f"{LOCATION_ENV} must be one of: {choices}.") from e
 
 
@@ -176,19 +178,22 @@ def _home(name: str, environ: Mapping[str, str], resolved: Location) -> Path:
         if not value:
             raise ValueError(f"{name} must not be empty.")
         return Path(value).expanduser()
-    defaults = _HOMES.get(resolved)
-    if defaults is None:
-        raise NotImplementedError(
-            f"{resolved.value} location defaults are not implemented; set {name} "
-            "explicitly or add the corresponding location profile."
-        )
-    default = defaults[name]
+    default = _default_home(name, resolved)
     warnings.warn(
         f"{name} is not set; using {resolved.value} default {default}.",
         RuntimeWarning,
         stacklevel=3,
     )
     return default
+
+
+def _default_home(name: str, resolved: Location) -> Path:
+    defaults = _HOMES.get(resolved)
+    if defaults is None:
+        raise NotImplementedError(
+            f"{resolved.value} location defaults are not implemented; set {name} explicitly or add the corresponding location profile."
+        )
+    return defaults[name]
 
 
 def _env_string(name: str, value: str | PathLike[str]) -> str:

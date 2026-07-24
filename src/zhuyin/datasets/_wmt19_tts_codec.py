@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from anydataset.provider.codec import CodecProvider
 from anydataset.store import ViewMaterializer
@@ -40,7 +40,9 @@ from zhuyin.datasets._wmt19_tts_stable import (
 from zhuyin.datasets._wmt19_tts_store import StoreFactory
 
 if TYPE_CHECKING:
+    from anytrain.codec import Codec
     from anytrain.codec.dac import ModelBitrate, ModelType
+    from anytrain.codec.stable_codec import SupportedVersion
 
 LONGCAT_STORE_DIR = "longcat"
 DAC_STORE_DIR = "dac"
@@ -70,8 +72,8 @@ class DACFactory:
         local_files_only: bool,
     ) -> None:
         self.cache_dir = cache_dir
-        self.model_type = model_type
-        self.model_bitrate = model_bitrate
+        self.model_type: ModelType = model_type
+        self.model_bitrate: ModelBitrate = model_bitrate
         self.tag = tag
         self.n_quantizers = n_quantizers
         self.local_files_only = local_files_only
@@ -95,12 +97,12 @@ class StableCodecFactory:
     def __init__(
         self,
         *,
-        version: str,
+        version: SupportedVersion,
         pretrained_model: str | None,
         posthoc_bottleneck: StableQuantizer,
         normalize: bool,
     ) -> None:
-        self.version = version
+        self.version: SupportedVersion = version
         self.pretrained_model = pretrained_model
         self.posthoc_bottleneck = posthoc_bottleneck
         self.normalize = normalize
@@ -124,7 +126,7 @@ class StableCodecFactory:
             posthoc_bottleneck=self.posthoc_bottleneck.value,
             normalize=self.normalize,
         )
-        return CodecProvider(codec, AudioView.STABLE)
+        return CodecProvider(cast("Codec", codec), AudioView.STABLE)
 
 
 class UniCodecFactory:
@@ -234,7 +236,7 @@ def prepare_stable_codec(
     read_prefetch: int | None,
     write_workers: int,
     write_prefetch: int | None,
-    version: str,
+    version: SupportedVersion,
     pretrained_model: str | None,
     posthoc_bottleneck: StableQuantizer = DEFAULT_STABLE_QUANTIZER,
     normalize: bool,
